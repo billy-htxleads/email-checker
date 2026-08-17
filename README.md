@@ -13,7 +13,7 @@ Open `index.html` in any browser, or use the hosted version on GitHub Pages.
 - **Images** - alt text required, .png/.jpg only
 - **Colors** - every inline color vs. the brand palette, quoting the exact copy it's on, with near-miss typo detection (e.g. `#402BFD` → `#412BFD`)
 - **Default colors** - copy falling back to the editor's default black (`#000000` on wrapper cells) gets an "update default text colors" comment; an off-brand `a { color }` rule in the stylesheet gets "update default link color"
-- **Typography** - Arial only; sizes on the 12/14/16/20/22/24/36 scale, quoting the exact copy
+- **Typography** - Arial only; sizes on the 12/14/16/20/22/24/36 scale, quoting the exact copy (body copy only, header/footer blocks are standard across emails)
 - **Hyperlinks** - underlined + Chromium Blue `#412BFD`
 - **Buttons** - 30px corner radius and 10/30px inner padding (including asymmetric top/bottom)
 - **Text boxes** - 20px left/right padding

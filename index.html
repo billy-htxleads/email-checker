@@ -359,7 +359,8 @@ function runChecks(html){
   const sizeUses = {}; // px -> [exact copy]
   const badFonts = {}; // family -> exact copy
   [...doc.querySelectorAll('[style]')].forEach(el=>{
-    if(isHeader(el)) return;
+    // typography is checked on body copy only: header/footer blocks are standard across emails
+    if(el.closest && el.closest('.elq-header-footer-cell')) return;
     const s = el.getAttribute('style')||'';
     const fsRaw = styleProp(s,'font-size');
     const fs = fsRaw && fsRaw.match(/^(\d+(?:\.\d+)?)px$/i);
