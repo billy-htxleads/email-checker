@@ -69,7 +69,7 @@
 <div class="wrap">
   <section class="card">
     <h2>1 · Paste the exported email HTML</h2>
-    <textarea id="input" placeholder="Paste the full Eloqua drag-and-drop HTML export here…"></textarea>
+    <textarea id="input" placeholder="Paste the full Eloqua drag-and-drop HTML export here..."></textarea>
     <div class="row">
       <button id="check">Check email</button>
       <button class="secondary" id="clear">Clear</button>
@@ -94,6 +94,8 @@
         <li>subject line + preview text set, and preview text matches the ticket</li>
         <li>sender name / sender email / reply-to are the approved ones</li>
         <li>correct email group assigned</li>
+        <li>button + background color combo looks right (approved variations aren't all in the guidelines)</li>
+        <li>section spacing looks visually correct (outer padding can add up across sections)</li>
         <li>ad modules sized right for their layout (600px hero ads: 200-400px tall)</li>
         <li>ACS logo: top left, 30% scale, blue-on-white or white-on-blue</li>
       </ul>
@@ -116,14 +118,6 @@ const PALETTE = [
 ];
 const PALSET = new Set(PALETTE.map(p=>p.hex));
 const TYPE_SCALE = {12:'P3 caption',14:'P2 body',16:'P1 / button / link',20:'H3',22:'H2',24:'H1',36:'Hero'};
-const BUTTON_COMBOS = [ // background the button sits on → allowed button fills
-  {bg:'412BFD', btn:'6FEDEE', text:'412BFD'},
-  {bg:'412BFD', btn:'412BFD', text:'FFFFFF'},
-  {bg:'412BFD', btn:'FFFFFF', text:'412BFD'},
-  {bg:'FFFFFF', btn:'412BFD', text:'FFFFFF'},
-  {bg:'FFFFFF', btn:'FFFFFF', text:'251F20'},
-  {bg:'FFFFFF', btn:'251F20', text:'FFFFFF'},
-];
 
 /* ============ helpers ============ */
 function toHex(c){
@@ -151,27 +145,16 @@ function nearest(hex){
   return best;
 }
 function esc(s){ return (s||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
-function snip(el, n=42){
+function fullText(el, cap=140){ // the exact copy being referenced, capped for very long paragraphs
   let t = (el && el.textContent||'').replace(/\s+/g,' ').trim();
   if(!t && el && el.getAttribute) t = (el.getAttribute('alt')||el.getAttribute('title')||'').trim();
-  return t.length>n ? t.slice(0,n)+'…' : t;
+  return t.length>cap ? t.slice(0,cap).trim()+'...' : t;
 }
 function styleProp(styleStr, prop){
   if(!styleStr) return null;
   const re = new RegExp('(?:^|;)\\s*'+prop.replace(/-/g,'\\-')+'\\s*:\\s*([^;]+)','i');
   const m = styleStr.match(re);
   return m ? m[1].trim() : null;
-}
-function inlineBg(el){ // nearest explicit background walking up
-  let cur = el;
-  while(cur && cur.getAttribute){
-    const s = cur.getAttribute('style');
-    const bg = styleProp(s,'background-color') || styleProp(s,'background');
-    const h = bg ? toHex(bg.split(' ')[0]) : (cur.getAttribute('bgcolor') ? toHex(cur.getAttribute('bgcolor')) : null);
-    if(h) return h;
-    cur = cur.parentElement;
-  }
-  return null;
 }
 function inlineColor(el){ // nearest explicit text color walking up (incl. <font color>)
   let cur = el;
@@ -192,10 +175,15 @@ function parsePad(pad){ // returns {t,r,b,l} in px or null
   if(p.length===3) return {t:p[0],r:p[1],b:p[2],l:p[1]};
   return {t:p[0],r:p[1],b:p[2],l:p[3]};
 }
-function listQuote(arr, max=3){
-  const shown = arr.slice(0,max).map(s=>'"'+s+'"');
-  const more = arr.length>max ? ` (+${arr.length-max} more)` : '';
-  return shown.join(', ')+more;
+function quoteList(arr){ // ["a","b","c"] -> "a", "b" and "c"
+  const q = arr.map(t=>'"'+t+'"');
+  if(q.length===1) return q[0];
+  if(q.length===2) return q[0]+' and '+q[1];
+  return q.slice(0,-1).join(', ')+' and '+q[q.length-1];
+}
+function cleanFile(src){ // strip Eloqua {guid}_ prefix off image filenames
+  const file = decodeURIComponent((src||'').split('?')[0].split('/').pop()||'');
+  return file.replace(/^\{[0-9a-f-]+\}_/i,'') || '(no src)';
 }
 
 /* ============ check engine - comments come out in Slack voice ============ */
@@ -204,12 +192,42 @@ function runChecks(html){
   const add = (sev, comment, guide)=>findings.push({sev, comment, guide});
   const doc = new DOMParser().parseFromString(html,'text/html');
 
-  /* ---- images: alt text + file type ---- */
+  /* The "view online" header bar is boilerplate we don't touch.
+     A header/footer cell is the header if it mentions the online version,
+     or if it sits before the first content row. The footer IS checked. */
+  const firstRow = doc.querySelector('table.row, .row');
+  function isHeader(el){
+    const cell = el.closest ? el.closest('.elq-header-footer-cell') : null;
+    if(!cell) return false;
+    if(/online version|trouble (read|view)/i.test(cell.textContent||'')) return true;
+    if(firstRow && (cell.compareDocumentPosition(firstRow) & Node.DOCUMENT_POSITION_FOLLOWING)) return true;
+    return false;
+  }
+
+  /* Backgrounds we don't flag: the canvas behind the email, the social icons
+     strip, and row backgrounds fully covered by content cells with their own bg. */
+  const SOCIAL_SEL = 'a[href*="facebook."],a[href*="instagram."],a[href*="linkedin."],a[href*="youtube."],a[href*="twitter."],a[href*="tiktok."],a[href*="x.com/"]';
+  function skipBg(el){
+    if(el.tagName==='BODY' || el.tagName==='HTML') return true;
+    if(el.classList && el.classList.contains('color-wrap')) return true;
+    if(el.querySelectorAll && el.querySelectorAll(SOCIAL_SEL).length>=2){
+      const txt = (el.textContent||'').replace(/\s+/g,' ').trim();
+      if(txt.length<40) return true; // the social strip itself
+      const cells = [...el.querySelectorAll('.elq-text-cell')];
+      if(cells.length && cells.every(c=>{
+        const s=c.getAttribute('style')||'';
+        return /background(-color)?\s*:/i.test(s) && !/background(-color)?\s*:\s*transparent/i.test(s);
+      })) return true; // row bg fully covered by content cells
+    }
+    return false;
+  }
+
+  /* ---- images: alt text + file type (header bar excluded) ---- */
   const noAlt = [], badExt = [];
   [...doc.querySelectorAll('img')].forEach(img=>{
+    if(isHeader(img)) return;
     const alt = img.getAttribute('alt');
-    const src = (img.getAttribute('src')||'').split('?')[0];
-    const file = decodeURIComponent(src.split('/').pop()||'') || '(no src)';
+    const file = cleanFile(img.getAttribute('src'));
     if(alt===null || alt.trim()==='') noAlt.push(file);
     const ext = (file.match(/\.(\w+)$/)||[])[1];
     if(ext && !['png','jpg','jpeg'].includes(ext.toLowerCase())) badExt.push(file);
@@ -220,55 +238,83 @@ function runChecks(html){
     'image assets - alt text is required');
   badExt.forEach(f=> add('issue', `image <code>${esc(f)}</code> should be .png or .jpg`, 'image assets - file types'));
 
-  /* ---- colors: off-brand + near-miss typos ---- */
-  const colorSeen = {}; // hex|prop -> {hex,prop,count,samples[]}
-  const note = (hex,prop,sample)=>{
-    const key = hex+'|'+prop;
-    if(!colorSeen[key]) colorSeen[key]={hex,prop,count:0,samples:[]};
-    colorSeen[key].count++;
-    if(sample && colorSeen[key].samples.length<3 && !colorSeen[key].samples.includes(sample)) colorSeen[key].samples.push(sample);
+  /* ---- colors: collect exact copy per hex ---- */
+  const textColors = {}; // hex -> [exact copy]
+  const bgColors = {};   // hex -> [exact copy]
+  const noteText = (hex,text)=>{
+    if(!textColors[hex]) textColors[hex]=[];
+    if(text && !textColors[hex].includes(text)) textColors[hex].push(text);
+    else if(!text && !textColors[hex].length) textColors[hex].push('');
+  };
+  const noteBg = (hex,text)=>{
+    if(!bgColors[hex]) bgColors[hex]=[];
+    if(!bgColors[hex].includes(text)) bgColors[hex].push(text);
   };
   [...doc.querySelectorAll('[style],[bgcolor],font[color]')].forEach(el=>{
+    if(isHeader(el)) return;
     const s = el.getAttribute('style')||'';
-    const c = toHex(styleProp(s,'color')); if(c) note(c,'text',snip(el,36));
-    const bgRaw = styleProp(s,'background-color') || styleProp(s,'background');
-    const bg = bgRaw ? toHex(bgRaw.split(' ')[0]) : null; if(bg) note(bg,'background',snip(el,36));
-    const bgc = el.getAttribute('bgcolor'); if(bgc){ const h=toHex(bgc); if(h) note(h,'background',snip(el,36)); }
-    if(el.tagName==='FONT' && el.getAttribute('color')){ const f=toHex(el.getAttribute('color')); if(f) note(f,'text',snip(el,36)); }
-  });
-  [...doc.querySelectorAll('style')].forEach(st=>{ // <style> blocks, no element context
-    const txt = st.textContent||'';
-    let m; const re=/(?:^|[;{]\s*)(color|background(?:-color)?)\s*:\s*([^;}!]+)/gi;
-    while((m=re.exec(txt))){
-      const prop = m[1].toLowerCase().startsWith('background') ? 'background' : 'text';
-      const hex = toHex(m[2].trim().split(' ')[0]);
-      if(hex) note(hex,prop,'(in the <style> block)');
+    const hasText = (el.textContent||'').trim().length>0;
+    const c = toHex(styleProp(s,'color'));
+    if(c && hasText) noteText(c, fullText(el)); // a text color on something with no text has no visual effect
+    if(el.tagName==='FONT' && el.getAttribute('color') && hasText){
+      const f=toHex(el.getAttribute('color')); if(f) noteText(f, fullText(el));
+    }
+    if(!skipBg(el)){
+      const bgRaw = styleProp(s,'background-color') || styleProp(s,'background');
+      const bg = bgRaw ? toHex(bgRaw.split(' ')[0]) : null;
+      if(bg) noteBg(bg, fullText(el));
+      const bgc = el.getAttribute('bgcolor');
+      if(bgc){ const h=toHex(bgc); if(h) noteBg(h, fullText(el)); }
     }
   });
-  Object.values(colorSeen).forEach(c=>{
-    if(PALSET.has(c.hex)) return;
-    const near = nearest(c.hex);
-    const inStyle = c.samples.includes('(in the <style> block)');
-    const realSamples = c.samples.filter(s=>s!=='(in the <style> block)');
-    const where = realSamples.length ? `, e.g. near ${esc(listQuote(realSamples,2))}`
-      : (inStyle ? ', set in the &lt;style&gt; block up top' : '');
-    const times = c.count>1 ? ` (used ${c.count}×)` : '';
+
+  // exact-copy reference clause shared by the color comments
+  const refs = texts => {
+    const t = texts.filter(Boolean);
+    if(!t.length) return {list:'', example:''};
+    if(t.length<=4) return {list: esc(quoteList(t)), example:''};
+    return {list:'', example: esc('"'+t[0]+'"')};
+  };
+
+  let sawDefaultBlack = false;
+  Object.entries(textColors).forEach(([hex,texts])=>{
+    if(hex==='000000'){ sawDefaultBlack = true; return; } // routed to the default-colors comment
+    if(PALSET.has(hex)) return;
+    const near = nearest(hex);
+    const r = refs(texts);
     if(near.d <= 10){
-      add('issue', `<code>#${c.hex}</code> looks like a typo of ${near.p.name}, should be <code>#${near.p.hex}</code>${times}${where}`,
+      const where = r.list ? ` (${r.list})` : (r.example ? ` (e.g. ${r.example} and more)` : '');
+      add('issue', `<code>#${hex}</code> looks like a typo of ${near.p.name}, should be <code>#${near.p.hex}</code>${where}`,
         'color usage - brand palette');
-    } else if(c.prop==='text'){
-      const suggest = (near.p.hex==='251F20' || dist(hexRgb(c.hex),hexRgb('251F20'))<80)
-        ? 'carbon black <code>#251F20</code>' : `${near.p.name} <code>#${near.p.hex}</code>`;
-      add('issue', `update text color, <code>#${c.hex}</code> isn't in the palette${times}, closest brand color is ${suggest}${where}`,
-        'color usage - primary palette');
     } else {
-      add('issue', `update background color, <code>#${c.hex}</code> isn't in the palette${times}, closest is ${near.p.name} <code>#${near.p.hex}</code>${where}`,
+      const suggest = (near.p.hex==='251F20' || dist(hexRgb(hex),hexRgb('251F20'))<80)
+        ? 'carbon black <code>#251F20</code>' : `${near.p.name} <code>#${near.p.hex}</code>`;
+      if(r.list){
+        const verb = texts.filter(Boolean).length>1 ? 'are' : 'is';
+        add('issue', `update text color, ${r.list} ${verb} <code>#${hex}</code>, should be ${suggest}`, 'color usage - primary palette');
+      } else if(r.example){
+        add('issue', `update text color, a lot of the copy is <code>#${hex}</code>, should be ${suggest} (e.g. ${r.example})`, 'color usage - primary palette');
+      } else {
+        add('issue', `update text color, <code>#${hex}</code> isn't in the palette, should be ${suggest}`, 'color usage - primary palette');
+      }
+    }
+  });
+  Object.entries(bgColors).forEach(([hex,texts])=>{
+    if(PALSET.has(hex)) return;
+    const near = nearest(hex);
+    const r = refs(texts);
+    const where = r.list ? ` (the section with ${r.list})` : (r.example ? ` (e.g. the section with ${r.example})` : '');
+    if(near.d <= 10){
+      add('issue', `<code>#${hex}</code> background looks like a typo of ${near.p.name}, should be <code>#${near.p.hex}</code>${where}`,
+        'color usage - brand palette');
+    } else {
+      add('issue', `update background color, <code>#${hex}</code> isn't in the palette, closest is ${near.p.name} <code>#${near.p.hex}</code>${where}`,
         'color usage - brand palette');
     }
   });
 
-  /* ---- text with NO color set anywhere → will default to the wrong color ---- */
-  const unstyled = [];
+  /* ---- default text colors: copy with no color set, or the #000000 default on wrappers ---- */
+  const fallback = [];
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
   let tn;
   while((tn = walker.nextNode())){
@@ -276,51 +322,92 @@ function runChecks(html){
     if(txt.length < 3) continue;
     const el = tn.parentElement;
     if(!el || ['STYLE','SCRIPT','TITLE'].includes(el.tagName)) continue;
-    if(inlineColor(el)===null){
-      const s = txt.length>36 ? txt.slice(0,36)+'…' : txt;
-      if(unstyled.length<4 && !unstyled.includes(s)) unstyled.push(s);
-      else if(unstyled.length>=4) { unstyled.overflow = true; }
+    if(isHeader(el)) continue;
+    if(el.closest && el.closest('a')) continue; // links fall back to the default LINK color instead
+    const c = inlineColor(el);
+    if(c===null || c==='000000'){
+      const s = txt.length>140 ? txt.slice(0,140).trim()+'...' : txt;
+      if(!fallback.includes(s)) fallback.push(s);
     }
   }
-  if(unstyled.length) add('warn',
-    `some text doesn't have a color selected so it'll default to the wrong color, set it explicitly (carbon black <code>#251F20</code>): ${esc(listQuote(unstyled,3))}`,
-    'color usage - carbon black is default text');
+  if(fallback.length){
+    const more = fallback.length-1;
+    const ref = more>0 ? `e.g. ${esc('"'+fallback[0]+'"')} and ${more} more spot${more>1?'s':''}` : esc('"'+fallback[0]+'"');
+    add('issue', `update default text colors, some copy is falling back to the default black (${ref}), should be carbon black <code>#251F20</code>`,
+      'color usage - carbon black is the text color');
+  } else if(sawDefaultBlack){
+    add('warn', `update default text colors, the default <code>#000000</code> is still set on the wrapper cells, should be carbon black <code>#251F20</code>`,
+      'color usage - carbon black is the text color');
+  }
 
-  /* ---- typography: off-scale sizes + non-Arial ---- */
-  const styleText = [...doc.querySelectorAll('[style]')].map(e=>e.getAttribute('style')).join(';')
-    + ';' + [...doc.querySelectorAll('style')].map(s=>s.textContent).join(';');
-  const sizeSeen = {};
-  let sm; const sre=/font-size\s*:\s*(\d+(?:\.\d+)?)px/gi;
-  while((sm=sre.exec(styleText))){ const px=Math.round(+sm[1]); if(px>0) sizeSeen[px]=(sizeSeen[px]||0)+1; } // 0px is an email layout hack, skip
+  /* ---- default link color: the a{} rule in the stylesheet ---- */
+  const defLinkHexes = new Set();
+  [...doc.querySelectorAll('style')].forEach(st=>{
+    for(const m of (st.textContent||'').matchAll(/([^{}]+)\{([^}]*)\}/g)){
+      const sel = m[1].trim();
+      if(!/(^|,)\s*a\s*(,|$)/.test(sel)) continue; // bare `a` selector = the editor's default link color
+      const c = toHex((styleProp(m[2],'color')||'').split(' ')[0]);
+      if(c && c!=='412BFD') defLinkHexes.add(c);
+    }
+  });
+  defLinkHexes.forEach(hex=>{
+    add('issue', `update default link color, <code>#${hex}</code> should be chromium blue <code>#412BFD</code>`, 'hyperlinks - color #412BFD');
+  });
+
+  /* ---- typography: off-scale sizes + non-Arial, with the exact copy ---- */
   const scale = Object.keys(TYPE_SCALE).map(Number);
-  Object.keys(sizeSeen).map(Number).sort((a,b)=>a-b).forEach(px=>{
-    if(!scale.includes(px)){
-      const close = scale.reduce((a,b)=>Math.abs(b-px)<Math.abs(a-px)?b:a);
-      add('warn', `<code>${px}px</code> text isn't on the type scale (used ${sizeSeen[px]}×), closest approved size is <code>${close}px</code> (${TYPE_SCALE[close]})`,
+  const sizeUses = {}; // px -> [exact copy]
+  const badFonts = {}; // family -> exact copy
+  [...doc.querySelectorAll('[style]')].forEach(el=>{
+    if(isHeader(el)) return;
+    const s = el.getAttribute('style')||'';
+    const fsRaw = styleProp(s,'font-size');
+    const fs = fsRaw && fsRaw.match(/^(\d+(?:\.\d+)?)px$/i);
+    if(fs){
+      const px = Math.round(+fs[1]);
+      if(px>0 && !scale.includes(px)){ // font-size:0 is an email layout hack, skip
+        const t = fullText(el);
+        if(t){ (sizeUses[px]=sizeUses[px]||[]).includes(t) || sizeUses[px].push(t); }
+      }
+    }
+    const fam = styleProp(s,'font-family');
+    if(fam && !/arial/i.test(fam) && !badFonts[fam]) badFonts[fam] = fullText(el);
+  });
+  Object.keys(sizeUses).map(Number).sort((a,b)=>a-b).forEach(px=>{
+    const texts = sizeUses[px];
+    // closest approved size(s), both named on a tie
+    let bestD = Infinity; scale.forEach(v=>{ bestD = Math.min(bestD, Math.abs(v-px)); });
+    const close = scale.filter(v=>Math.abs(v-px)===bestD);
+    const want = close.map(v=>`<code>${v}px</code> (${TYPE_SCALE[v]})`).join(' or ');
+    if(texts.length===1){
+      add('warn', `${esc('"'+texts[0]+'"')} is <code>${px}px</code>, that's not on the type scale, closest approved size is ${want}`,
+        'typography - approved sizes 12/14/16/20/22/24/36');
+    } else if(texts.length<=4){
+      add('warn', `${esc(quoteList(texts))} are <code>${px}px</code>, that's not on the type scale, closest approved size is ${want}`,
+        'typography - approved sizes 12/14/16/20/22/24/36');
+    } else {
+      add('warn', `a lot of the copy is <code>${px}px</code>, that's not on the type scale, closest approved size is ${want} (e.g. ${esc('"'+texts[0]+'"')})`,
         'typography - approved sizes 12/14/16/20/22/24/36');
     }
   });
-  const fams = new Set();
-  let fmm; const fre=/font-family\s*:\s*([^;"'}]+)/gi;
-  while((fmm=fre.exec(styleText))){ fams.add(fmm[1].trim().toLowerCase()); }
-  fams.forEach(f=>{
-    if(!/arial/.test(f)) add('warn', `non-Arial font declared (<code>${esc(f)}</code>), brand font is Arial`, 'typography - Arial');
+  Object.entries(badFonts).forEach(([fam,text])=>{
+    const where = text ? ` (${esc('"'+text+'"')})` : '';
+    add('warn', `non-Arial font declared, <code>${esc(fam)}</code>${where}, brand font is Arial`, 'typography - Arial');
   });
 
   /* ---- links + buttons ---- */
   const noUnderline = [], wrongLinkColor = {};
   [...doc.querySelectorAll('a[href]')].forEach(a=>{
+    if(isHeader(a)) return;
     const s = a.getAttribute('style')||'';
     const looksLikeButton = /border-radius/i.test(s) ||
       (/background-color/i.test(s) && /display\s*:\s*inline-block/i.test(s));
 
     if(looksLikeButton){
-      const label = snip(a,32) || '(button)';
-      // corner radius
+      const label = fullText(a,60) || '(button)';
       const rad = styleProp(s,'border-radius');
       if(rad && parseInt(rad)!==30)
         add('issue', `button "${esc(label)}" corner radius is <code>${esc(rad)}</code>, should be <code>30px</code>`, 'buttons - 30px corner radius');
-      // inner padding
       const pad = parsePad(styleProp(s,'padding'));
       if(pad){
         if(pad.t!==pad.b){
@@ -332,34 +419,11 @@ function runChecks(html){
         if(pad.l!==30 || pad.r!==30)
           add('warn', `button "${esc(label)}" left/right padding is <code>${pad.l}px/${pad.r}px</code>, spec is 30px`, 'buttons - inner padding 30px l/r');
       }
-      // color combo
-      const btn = toHex(styleProp(s,'background-color'));
-      if(btn){
-        const allowed = BUTTON_COMBOS.filter(c=>c.btn===btn);
-        if(!allowed.length){
-          add('issue', `button "${esc(label)}" fill <code>#${btn}</code> isn't an approved button color`, 'buttons - acceptable color combinations');
-        } else {
-          const cellBg = inlineBg(a.parentElement);
-          if(cellBg && !allowed.some(c=>c.bg===cellBg)){
-            const want = [...new Set(allowed.map(c=>'#'+c.bg))].join(' or ');
-            add('warn', `button "${esc(label)}" (<code>#${btn}</code> fill) sits on a <code>#${cellBg}</code> background, that combo isn't approved, this button belongs on <code>${want}</code>`, 'buttons - acceptable color combinations');
-          }
-          // button text color
-          const textCols = new Set();
-          const own = toHex(styleProp(s,'color')); if(own) textCols.add(own);
-          [...a.querySelectorAll('[style]')].forEach(x=>{ const cc=toHex(styleProp(x.getAttribute('style'),'color')); if(cc) textCols.add(cc); });
-          const okText = allowed.some(c=>textCols.has(c.text));
-          if(textCols.size && !okText){
-            const want = [...new Set(allowed.map(c=>'#'+c.text))].join(' or ');
-            add('warn', `button "${esc(label)}" text color should be <code>${want}</code> for a <code>#${btn}</code> button`, 'buttons - acceptable color combinations');
-          }
-        }
-      }
-      return; // buttons don't need underline
+      return; // buttons don't need underline; fill/background combos are checked visually
     }
 
-    // regular hyperlink → underlined + chromium blue
-    const label = snip(a,40) || a.getAttribute('href');
+    // regular hyperlink: underlined + chromium blue
+    const label = fullText(a,80) || a.getAttribute('href');
     const deco = styleProp(s,'text-decoration') || '';
     const childU = a.querySelector('u') || [...a.querySelectorAll('[style]')].some(x=>/text-decoration\s*:[^;]*underline/i.test(x.getAttribute('style')||''));
     if(/none/.test(deco) && !childU && !a.querySelector('img')) noUnderline.push(label);
@@ -380,19 +444,11 @@ function runChecks(html){
     }
   });
   if(noUnderline.length) add('issue',
-    `links missing underline: ${esc(listQuote(noUnderline,3))}`,
+    `links missing underline: ${esc(quoteList(noUnderline))}`,
     'hyperlinks - style: underlined');
   Object.entries(wrongLinkColor).forEach(([hex,labels])=>{
-    add('issue', `update link colors, ${esc(listQuote(labels,3))} ${labels.length>1?'are':'is'} <code>#${hex}</code>, should be chromium blue <code>#412BFD</code>`,
+    add('issue', `update link colors, ${esc(quoteList(labels))} ${labels.length>1?'are':'is'} <code>#${hex}</code>, should be chromium blue <code>#412BFD</code>`,
       'hyperlinks - color #412BFD');
-  });
-
-  /* ---- button cell outer padding (top 0 / bottom 20 / l+r 20) ---- */
-  [...doc.querySelectorAll('.elq-button-cell')].forEach(td=>{
-    const pad = parsePad(styleProp(td.getAttribute('style'),'padding'));
-    if(pad && !(pad.t===0 && pad.b===20 && pad.l===20 && pad.r===20)){
-      add('warn', `button block outer padding is <code>${pad.t}/${pad.r}/${pad.b}/${pad.l}px</code>, spec is 0 top, 20px bottom, 20px left/right`, 'buttons - outer padding');
-    }
   });
 
   /* ---- text box left/right padding (20px) ---- */
@@ -406,8 +462,8 @@ function runChecks(html){
   /* ---- emoji in lists ---- */
   const emojiRe = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/u;
   const emojiLis = [];
-  [...doc.querySelectorAll('li')].forEach(li=>{ if(emojiRe.test(li.textContent||'')) emojiLis.push(snip(li,36)); });
-  if(emojiLis.length) add('issue', `emoji in bullet list, not allowed per guidelines: ${esc(listQuote(emojiLis,2))}`, 'emoji usage - not in lists');
+  [...doc.querySelectorAll('li')].forEach(li=>{ if(!isHeader(li) && emojiRe.test(li.textContent||'')) emojiLis.push(fullText(li,60)); });
+  if(emojiLis.length) add('issue', `emoji in bullet list, not allowed per guidelines: ${esc(quoteList(emojiLis))}`, 'emoji usage - not in lists');
 
   return findings;
 }

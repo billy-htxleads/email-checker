@@ -6,27 +6,30 @@ Paste an Eloqua drag-and-drop HTML export → get Slack-ready review comments ch
 
 ## Use it
 
-Open `index.html` in any browser, or host it on GitHub Pages:
-
-1. Push this repo to GitHub
-2. Repo → Settings → Pages → Source: **Deploy from a branch** → `main` / root
-3. Open `https://<user>.github.io/email-checker/`
+Open `index.html` in any browser, or use the hosted version on GitHub Pages.
 
 ## What it checks
 
 - **Images** - alt text required, .png/.jpg only
-- **Colors** - every inline/`<style>` color vs. the brand palette, with near-miss typo detection (e.g. `#402BFD` → `#412BFD`)
-- **Text with no color set** - flags text that will fall back to the client default
-- **Typography** - Arial only; sizes on the 12/14/16/20/22/24/36 scale
+- **Colors** - every inline color vs. the brand palette, quoting the exact copy it's on, with near-miss typo detection (e.g. `#402BFD` → `#412BFD`)
+- **Default colors** - copy falling back to the editor's default black (`#000000` on wrapper cells) gets an "update default text colors" comment; an off-brand `a { color }` rule in the stylesheet gets "update default link color"
+- **Typography** - Arial only; sizes on the 12/14/16/20/22/24/36 scale, quoting the exact copy
 - **Hyperlinks** - underlined + Chromium Blue `#412BFD`
-- **Buttons** - 30px radius, 10/30px inner padding (incl. asymmetric top/bottom), approved fill + background + text-color combinations, outer padding
+- **Buttons** - 30px corner radius and 10/30px inner padding (including asymmetric top/bottom)
 - **Text boxes** - 20px left/right padding
 - **Emojis** - flagged in bulleted lists
+
+## What it deliberately ignores
+
+- The "view online" header bar (boilerplate, we don't touch it) - the footer IS checked
+- The canvas background behind the email and the social icons strip
+- Row backgrounds fully covered by content cells with their own background
+- Button/background color combos and outer padding - checked visually instead (approved variations aren't all in the guidelines)
 
 Things that can't be derived from the HTML (subject line, preview text vs. ticket, sender/reply-to, email group, ad module sizing, logo placement) are shown as a manual reminder list.
 
 ## Updating the rules
 
-All brand data lives at the top of the `<script>` in `index.html`: `PALETTE`, `TYPE_SCALE`, and `BUTTON_COMBOS`. Edit and refresh.
+All brand data lives at the top of the `<script>` in `index.html`: `PALETTE` and `TYPE_SCALE`. Edit and refresh.
 
-`test/acs-sample.html` is a real export used as a test fixture.
+`test/acs-sample.html` is a real export used as a test fixture (not committed).
