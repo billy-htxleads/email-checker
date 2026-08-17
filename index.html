@@ -73,7 +73,7 @@
     <div class="row">
       <button id="check">Check email</button>
       <button class="secondary" id="clear">Clear</button>
-      <span class="hint">Nothing is uploaded — checks run locally.</span>
+      <span class="hint">Nothing is uploaded - checks run locally.</span>
     </div>
     <div class="swatchbar" id="palette"></div>
   </section>
@@ -89,12 +89,12 @@
     </div>
 
     <div class="manual">
-      <h3>Can't be checked from the HTML — eyeball these in Eloqua</h3>
+      <h3>Can't be checked from the HTML - eyeball these in Eloqua</h3>
       <ul>
         <li>subject line + preview text set, and preview text matches the ticket</li>
         <li>sender name / sender email / reply-to are the approved ones</li>
         <li>correct email group assigned</li>
-        <li>ad modules sized right for their layout (600px hero ads: 200–400px tall)</li>
+        <li>ad modules sized right for their layout (600px hero ads: 200-400px tall)</li>
         <li>ACS logo: top left, 30% scale, blue-on-white or white-on-blue</li>
       </ul>
     </div>
@@ -198,7 +198,7 @@ function listQuote(arr, max=3){
   return shown.join(', ')+more;
 }
 
-/* ============ check engine — comments come out in Slack voice ============ */
+/* ============ check engine - comments come out in Slack voice ============ */
 function runChecks(html){
   const findings = [];
   const add = (sev, comment, guide)=>findings.push({sev, comment, guide});
@@ -215,10 +215,10 @@ function runChecks(html){
     if(ext && !['png','jpg','jpeg'].includes(ext.toLowerCase())) badExt.push(file);
   });
   if(noAlt.length) add('issue',
-    (noAlt.length===1 ? `image is missing alt text — <code>${esc(noAlt[0])}</code>`
-      : `${noAlt.length} images are missing alt text — ${noAlt.map(f=>'<code>'+esc(f)+'</code>').join(', ')}`),
-    'image assets — alt text is required');
-  badExt.forEach(f=> add('issue', `image <code>${esc(f)}</code> should be .png or .jpg`, 'image assets — file types'));
+    (noAlt.length===1 ? `image is missing alt text: <code>${esc(noAlt[0])}</code>`
+      : `${noAlt.length} images are missing alt text: ${noAlt.map(f=>'<code>'+esc(f)+'</code>').join(', ')}`),
+    'image assets - alt text is required');
+  badExt.forEach(f=> add('issue', `image <code>${esc(f)}</code> should be .png or .jpg`, 'image assets - file types'));
 
   /* ---- colors: off-brand + near-miss typos ---- */
   const colorSeen = {}; // hex|prop -> {hex,prop,count,samples[]}
@@ -250,20 +250,20 @@ function runChecks(html){
     const near = nearest(c.hex);
     const inStyle = c.samples.includes('(in the <style> block)');
     const realSamples = c.samples.filter(s=>s!=='(in the <style> block)');
-    const where = realSamples.length ? ` — e.g. near ${esc(listQuote(realSamples,2))}`
-      : (inStyle ? ' — set in the &lt;style&gt; block up top' : '');
+    const where = realSamples.length ? `, e.g. near ${esc(listQuote(realSamples,2))}`
+      : (inStyle ? ', set in the &lt;style&gt; block up top' : '');
     const times = c.count>1 ? ` (used ${c.count}×)` : '';
     if(near.d <= 10){
-      add('issue', `<code>#${c.hex}</code> looks like a typo of ${near.p.name} — should be <code>#${near.p.hex}</code>${times}${where}`,
-        'color usage — brand palette');
+      add('issue', `<code>#${c.hex}</code> looks like a typo of ${near.p.name}, should be <code>#${near.p.hex}</code>${times}${where}`,
+        'color usage - brand palette');
     } else if(c.prop==='text'){
       const suggest = (near.p.hex==='251F20' || dist(hexRgb(c.hex),hexRgb('251F20'))<80)
         ? 'carbon black <code>#251F20</code>' : `${near.p.name} <code>#${near.p.hex}</code>`;
-      add('issue', `update text color — <code>#${c.hex}</code> isn't in the palette${times}, closest brand color is ${suggest}${where}`,
-        'color usage — primary palette');
+      add('issue', `update text color, <code>#${c.hex}</code> isn't in the palette${times}, closest brand color is ${suggest}${where}`,
+        'color usage - primary palette');
     } else {
-      add('issue', `update background color — <code>#${c.hex}</code> isn't in the palette${times}, closest is ${near.p.name} <code>#${near.p.hex}</code>${where}`,
-        'color usage — brand palette');
+      add('issue', `update background color, <code>#${c.hex}</code> isn't in the palette${times}, closest is ${near.p.name} <code>#${near.p.hex}</code>${where}`,
+        'color usage - brand palette');
     }
   });
 
@@ -283,8 +283,8 @@ function runChecks(html){
     }
   }
   if(unstyled.length) add('warn',
-    `some text doesn't have a color selected so it'll default to the wrong color — set it explicitly (carbon black <code>#251F20</code>): ${esc(listQuote(unstyled,3))}`,
-    'color usage — carbon black is default text');
+    `some text doesn't have a color selected so it'll default to the wrong color, set it explicitly (carbon black <code>#251F20</code>): ${esc(listQuote(unstyled,3))}`,
+    'color usage - carbon black is default text');
 
   /* ---- typography: off-scale sizes + non-Arial ---- */
   const styleText = [...doc.querySelectorAll('[style]')].map(e=>e.getAttribute('style')).join(';')
@@ -296,15 +296,15 @@ function runChecks(html){
   Object.keys(sizeSeen).map(Number).sort((a,b)=>a-b).forEach(px=>{
     if(!scale.includes(px)){
       const close = scale.reduce((a,b)=>Math.abs(b-px)<Math.abs(a-px)?b:a);
-      add('warn', `<code>${px}px</code> text isn't on the type scale (used ${sizeSeen[px]}×) — closest approved size is <code>${close}px</code> (${TYPE_SCALE[close]})`,
-        'typography — approved sizes 12/14/16/20/22/24/36');
+      add('warn', `<code>${px}px</code> text isn't on the type scale (used ${sizeSeen[px]}×), closest approved size is <code>${close}px</code> (${TYPE_SCALE[close]})`,
+        'typography - approved sizes 12/14/16/20/22/24/36');
     }
   });
   const fams = new Set();
   let fmm; const fre=/font-family\s*:\s*([^;"'}]+)/gi;
   while((fmm=fre.exec(styleText))){ fams.add(fmm[1].trim().toLowerCase()); }
   fams.forEach(f=>{
-    if(!/arial/.test(f)) add('warn', `non-Arial font declared — <code>${esc(f)}</code>, brand font is Arial`, 'typography — Arial');
+    if(!/arial/.test(f)) add('warn', `non-Arial font declared (<code>${esc(f)}</code>), brand font is Arial`, 'typography - Arial');
   });
 
   /* ---- links + buttons ---- */
@@ -319,30 +319,30 @@ function runChecks(html){
       // corner radius
       const rad = styleProp(s,'border-radius');
       if(rad && parseInt(rad)!==30)
-        add('issue', `button "${esc(label)}" corner radius is <code>${esc(rad)}</code> — should be <code>30px</code>`, 'buttons — 30px corner radius');
+        add('issue', `button "${esc(label)}" corner radius is <code>${esc(rad)}</code>, should be <code>30px</code>`, 'buttons - 30px corner radius');
       // inner padding
       const pad = parsePad(styleProp(s,'padding'));
       if(pad){
         if(pad.t!==pad.b){
           const which = pad.b>pad.t ? 'bottom is bigger than top' : 'top is bigger than bottom';
-          add('issue', `button "${esc(label)}" padding ${which} (<code>${pad.t}px</code> / <code>${pad.b}px</code>) — should be 10px top and bottom`, 'buttons — inner padding 10px t/b');
+          add('issue', `button "${esc(label)}" padding ${which} (<code>${pad.t}px</code> / <code>${pad.b}px</code>), should be 10px top and bottom`, 'buttons - inner padding 10px t/b');
         } else if(pad.t!==10){
-          add('warn', `button "${esc(label)}" top/bottom padding is <code>${pad.t}px</code> — spec is 10px`, 'buttons — inner padding 10px t/b');
+          add('warn', `button "${esc(label)}" top/bottom padding is <code>${pad.t}px</code>, spec is 10px`, 'buttons - inner padding 10px t/b');
         }
         if(pad.l!==30 || pad.r!==30)
-          add('warn', `button "${esc(label)}" left/right padding is <code>${pad.l}px/${pad.r}px</code> — spec is 30px`, 'buttons — inner padding 30px l/r');
+          add('warn', `button "${esc(label)}" left/right padding is <code>${pad.l}px/${pad.r}px</code>, spec is 30px`, 'buttons - inner padding 30px l/r');
       }
       // color combo
       const btn = toHex(styleProp(s,'background-color'));
       if(btn){
         const allowed = BUTTON_COMBOS.filter(c=>c.btn===btn);
         if(!allowed.length){
-          add('issue', `button "${esc(label)}" fill <code>#${btn}</code> isn't an approved button color`, 'buttons — acceptable color combinations');
+          add('issue', `button "${esc(label)}" fill <code>#${btn}</code> isn't an approved button color`, 'buttons - acceptable color combinations');
         } else {
           const cellBg = inlineBg(a.parentElement);
           if(cellBg && !allowed.some(c=>c.bg===cellBg)){
             const want = [...new Set(allowed.map(c=>'#'+c.bg))].join(' or ');
-            add('warn', `button "${esc(label)}" (<code>#${btn}</code> fill) sits on a <code>#${cellBg}</code> background — that combo isn't approved, this button belongs on <code>${want}</code>`, 'buttons — acceptable color combinations');
+            add('warn', `button "${esc(label)}" (<code>#${btn}</code> fill) sits on a <code>#${cellBg}</code> background, that combo isn't approved, this button belongs on <code>${want}</code>`, 'buttons - acceptable color combinations');
           }
           // button text color
           const textCols = new Set();
@@ -351,7 +351,7 @@ function runChecks(html){
           const okText = allowed.some(c=>textCols.has(c.text));
           if(textCols.size && !okText){
             const want = [...new Set(allowed.map(c=>'#'+c.text))].join(' or ');
-            add('warn', `button "${esc(label)}" text color should be <code>${want}</code> for a <code>#${btn}</code> button`, 'buttons — acceptable color combinations');
+            add('warn', `button "${esc(label)}" text color should be <code>${want}</code> for a <code>#${btn}</code> button`, 'buttons - acceptable color combinations');
           }
         }
       }
@@ -380,18 +380,18 @@ function runChecks(html){
     }
   });
   if(noUnderline.length) add('issue',
-    `links missing underline — ${esc(listQuote(noUnderline,3))}`,
-    'hyperlinks — style: underlined');
+    `links missing underline: ${esc(listQuote(noUnderline,3))}`,
+    'hyperlinks - style: underlined');
   Object.entries(wrongLinkColor).forEach(([hex,labels])=>{
-    add('issue', `update link colors — ${esc(listQuote(labels,3))} ${labels.length>1?'are':'is'} <code>#${hex}</code>, should be chromium blue <code>#412BFD</code>`,
-      'hyperlinks — color #412BFD');
+    add('issue', `update link colors, ${esc(listQuote(labels,3))} ${labels.length>1?'are':'is'} <code>#${hex}</code>, should be chromium blue <code>#412BFD</code>`,
+      'hyperlinks - color #412BFD');
   });
 
   /* ---- button cell outer padding (top 0 / bottom 20 / l+r 20) ---- */
   [...doc.querySelectorAll('.elq-button-cell')].forEach(td=>{
     const pad = parsePad(styleProp(td.getAttribute('style'),'padding'));
     if(pad && !(pad.t===0 && pad.b===20 && pad.l===20 && pad.r===20)){
-      add('warn', `button block outer padding is <code>${pad.t}/${pad.r}/${pad.b}/${pad.l}px</code> — spec is 0 top, 20px bottom, 20px left/right`, 'buttons — outer padding');
+      add('warn', `button block outer padding is <code>${pad.t}/${pad.r}/${pad.b}/${pad.l}px</code>, spec is 0 top, 20px bottom, 20px left/right`, 'buttons - outer padding');
     }
   });
 
@@ -401,13 +401,13 @@ function runChecks(html){
     const pad = parsePad(styleProp(td.getAttribute('style'),'padding'));
     if(pad && (pad.l!==20 || pad.r!==20)) badTextPad.add(`${pad.l}px/${pad.r}px`);
   });
-  badTextPad.forEach(p=> add('warn', `text box left/right padding is <code>${p}</code> — spec is 20px`, 'text box padding — 20px l/r'));
+  badTextPad.forEach(p=> add('warn', `text box left/right padding is <code>${p}</code>, spec is 20px`, 'text box padding - 20px l/r'));
 
   /* ---- emoji in lists ---- */
   const emojiRe = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/u;
   const emojiLis = [];
   [...doc.querySelectorAll('li')].forEach(li=>{ if(emojiRe.test(li.textContent||'')) emojiLis.push(snip(li,36)); });
-  if(emojiLis.length) add('issue', `emoji in bullet list — not allowed per guidelines: ${esc(listQuote(emojiLis,2))}`, 'emoji usage — not in lists');
+  if(emojiLis.length) add('issue', `emoji in bullet list, not allowed per guidelines: ${esc(listQuote(emojiLis,2))}`, 'emoji usage - not in lists');
 
   return findings;
 }
@@ -429,7 +429,7 @@ function render(findings){
 
   const res = document.getElementById('results');
   res.innerHTML = '';
-  if(!findings.length) res.innerHTML = '<div class="empty">no brand issues found — still eyeball the manual list below.</div>';
+  if(!findings.length) res.innerHTML = '<div class="empty">no brand issues found, still eyeball the manual list below.</div>';
   findings.forEach(f=>{
     const d=document.createElement('div'); d.className='finding '+f.sev;
     d.innerHTML = `<div class="c">${f.sev==='issue'?'🔴':'🟡'} ${f.comment}</div><div class="g">guideline: ${esc(f.guide)}</div>`;
