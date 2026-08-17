@@ -397,10 +397,24 @@ function runChecks(html){
   });
 
   /* ---- links + buttons ---- */
-  const noUnderline = [], wrongLinkColor = {};
+  // how we refer to a link in a comment: its text, or its image's alt/filename
+  function linkLabel(a){
+    const t = fullText(a,80);
+    if(t) return t;
+    const img = a.querySelector('img');
+    if(img){
+      const alt = (img.getAttribute('alt')||'').trim();
+      return (alt || cleanFile(img.getAttribute('src')))+' (image link)';
+    }
+    return a.getAttribute('href')||'(link)';
+  }
+  const noUnderline = [], wrongLinkColor = {}, noHover = [];
   [...doc.querySelectorAll('a[href]')].forEach(a=>{
     if(isHeader(a)) return;
     const s = a.getAttribute('style')||'';
+
+    // every link needs hover text: text links, image links, and button links
+    if(!(a.getAttribute('title')||'').trim()) noHover.push(linkLabel(a));
     const looksLikeButton = /border-radius/i.test(s) ||
       (/background-color/i.test(s) && /display\s*:\s*inline-block/i.test(s));
 
@@ -447,6 +461,11 @@ function runChecks(html){
   if(noUnderline.length) add('issue',
     `links missing underline: ${esc(quoteList(noUnderline))}`,
     'hyperlinks - style: underlined');
+  if(noHover.length){
+    const shown = noHover.length<=6 ? quoteList(noHover)
+      : noHover.slice(0,5).map(t=>'"'+t+'"').join(', ')+` and ${noHover.length-5} more`;
+    add('issue', `${noHover.length===1?'link':'links'} missing hover text: ${esc(shown)}`, 'hyperlinks - hover text (title) required');
+  }
   Object.entries(wrongLinkColor).forEach(([hex,labels])=>{
     add('issue', `update link colors, ${esc(quoteList(labels))} ${labels.length>1?'are':'is'} <code>#${hex}</code>, should be chromium blue <code>#412BFD</code>`,
       'hyperlinks - color #412BFD');
