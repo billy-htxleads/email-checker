@@ -276,9 +276,8 @@ function runChecks(html){
     return {list:'', example: esc('"'+t[0]+'"')};
   };
 
-  let sawDefaultBlack = false;
   Object.entries(textColors).forEach(([hex,texts])=>{
-    if(hex==='000000'){ sawDefaultBlack = true; return; } // routed to the default-colors comment
+    if(hex==='000000') return; // if it visibly affects copy, the default-colors check below catches it
     if(PALSET.has(hex)) return;
     const near = nearest(hex);
     const r = refs(texts);
@@ -334,9 +333,6 @@ function runChecks(html){
     const more = fallback.length-1;
     const ref = more>0 ? `e.g. ${esc('"'+fallback[0]+'"')} and ${more} more spot${more>1?'s':''}` : esc('"'+fallback[0]+'"');
     add('issue', `update default text colors, some copy is falling back to the default black (${ref}), should be carbon black <code>#251F20</code>`,
-      'color usage - carbon black is the text color');
-  } else if(sawDefaultBlack){
-    add('warn', `update default text colors, the default <code>#000000</code> is still set on the wrapper cells, should be carbon black <code>#251F20</code>`,
       'color usage - carbon black is the text color');
   }
 
