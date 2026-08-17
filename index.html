@@ -413,8 +413,11 @@ function runChecks(html){
     if(isHeader(a)) return;
     const s = a.getAttribute('style')||'';
 
-    // every link needs hover text: text links, image links, and button links
-    if(!(a.getAttribute('title')||'').trim()) noHover.push(linkLabel(a));
+    // every body-content link needs hover text: text links, image links, and button links.
+    // header/footer blocks and the social icon strip are standard across emails, skip them.
+    const inHeaderFooter = a.closest && a.closest('.elq-header-footer-cell');
+    const isSocialIcon = /facebook\.|instagram\.|linkedin\.|youtube\.|twitter\.|tiktok\.|x\.com\//i.test(a.getAttribute('href')||'') && !fullText(a,10);
+    if(!inHeaderFooter && !isSocialIcon && !(a.getAttribute('title')||'').trim()) noHover.push(linkLabel(a));
     const looksLikeButton = /border-radius/i.test(s) ||
       (/background-color/i.test(s) && /display\s*:\s*inline-block/i.test(s));
 
