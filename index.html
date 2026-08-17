@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ACS Email Brand Checker</title>
+<style>
+  :root{
+    --blue:#412BFD; --black:#251F20; --grey:#EDEDED; --cupric:#6FEDEE;
+    --bg:#f6f7f9; --card:#ffffff; --line:#e3e5e8; --muted:#5b6169; --fg:#222;
+    --issue:#c62828; --issuebg:#fdecec; --warn:#b26a00; --warnbg:#fff6e6;
+    --ok:#1b7a3d; --okbg:#e9f6ee;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#14161a; --card:#1d2026; --line:#2b2f37; --muted:#9aa1ab; --fg:#e7e9ec;
+      --issuebg:#3a1e1e; --warnbg:#3a2f18; --okbg:#183024;
+      --issue:#ff8a80; --warn:#ffcc80; --ok:#81c995; }
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); font-family:Arial, Helvetica, sans-serif; color:var(--fg); line-height:1.5; }
+  header{ background:#251F20; color:#fff; padding:18px 20px; display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  header .dot{ width:14px; height:14px; border-radius:50%; background:var(--blue); box-shadow:0 0 0 4px rgba(65,43,253,.25); }
+  header h1{ font-size:18px; margin:0; font-weight:bold; letter-spacing:.2px; }
+  header .sub{ font-size:12px; color:#c7c9cf; margin-left:auto; }
+  .wrap{ max-width:1150px; margin:0 auto; padding:20px; display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
+  @media (max-width:880px){ .wrap{ grid-template-columns:1fr; } }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .card h2{ font-size:13px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); margin:0 0 10px; }
+  textarea{ width:100%; min-height:340px; resize:vertical; border:1px solid var(--line); border-radius:8px;
+    padding:12px; font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px;
+    background:transparent; color:var(--fg); line-height:1.45; }
+  .row{ display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; align-items:center; }
+  button{ background:var(--blue); color:#fff; border:0; border-radius:30px; padding:11px 26px;
+    font-size:14px; font-weight:bold; cursor:pointer; font-family:inherit; }
+  button.secondary{ background:transparent; color:var(--blue); border:2px solid var(--blue); padding:9px 20px; }
+  @media (prefers-color-scheme: dark){ button.secondary{ color:#9d8dff; border-color:#9d8dff; } }
+  button:active{ transform:translateY(1px); }
+  .hint{ font-size:12px; color:var(--muted); }
+  .summary{ display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px; }
+  .chip{ font-size:12px; font-weight:bold; padding:6px 12px; border-radius:20px; }
+  .chip.issue{ background:var(--issuebg); color:var(--issue); }
+  .chip.warn{ background:var(--warnbg); color:var(--warn); }
+  .chip.ok{ background:var(--okbg); color:var(--ok); }
+  .finding{ border:1px solid var(--line); border-left-width:4px; border-radius:8px; padding:11px 13px; margin-bottom:10px; }
+  .finding.issue{ border-left-color:var(--issue); }
+  .finding.warn{ border-left-color:var(--warn); }
+  .finding .c{ font-size:14px; }
+  .finding .g{ font-size:11px; color:var(--muted); margin-top:5px; text-transform:uppercase; letter-spacing:.4px; }
+  .finding code{ background:rgba(125,125,125,.16); padding:1px 5px; border-radius:4px; font-size:12px; }
+  .swatchbar{ display:flex; gap:6px 14px; flex-wrap:wrap; margin-top:12px; }
+  .sw{ display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
+  .sw b{ width:14px; height:14px; border-radius:3px; border:1px solid rgba(125,125,125,.4); display:inline-block; }
+  .empty{ color:var(--muted); font-size:13px; padding:20px; text-align:center; }
+  .copywrap{ margin-top:14px; }
+  pre.copyout{ white-space:pre-wrap; background:rgba(125,125,125,.1); padding:12px; border-radius:8px; font-size:12.5px; margin-top:10px; font-family:inherit; }
+  .manual{ margin-top:16px; border-top:1px dashed var(--line); padding-top:12px; }
+  .manual h3{ font-size:12px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); margin:0 0 8px; }
+  .manual ul{ margin:0; padding-left:18px; font-size:13px; color:var(--muted); }
+  .manual li{ margin-bottom:4px; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot"></span>
+  <h1>ACS Email Brand Checker</h1>
+  <span class="sub">paste Eloqua HTML → get Slack-ready comments · runs 100% in your browser</span>
+</header>
+
+<div class="wrap">
+  <section class="card">
+    <h2>1 · Paste the exported email HTML</h2>
+    <textarea id="input" placeholder="Paste the full Eloqua drag-and-drop HTML export here…"></textarea>
+    <div class="row">
+      <button id="check">Check email</button>
+      <button class="secondary" id="clear">Clear</button>
+      <span class="hint">Nothing is uploaded — checks run locally.</span>
+    </div>
+    <div class="swatchbar" id="palette"></div>
+  </section>
+
+  <section class="card">
+    <h2>2 · Comments for your teammate</h2>
+    <div id="summary" class="summary"></div>
+    <div id="results"><div class="empty">Paste an email and click <b>Check email</b>.</div></div>
+
+    <div class="copywrap" id="copywrap" style="display:none">
+      <button class="secondary" id="copybtn">Copy comments</button>
+      <pre class="copyout" id="copyout"></pre>
+    </div>
+
+    <div class="manual">
+      <h3>Can't be checked from the HTML — eyeball these in Eloqua</h3>
+      <ul>
+        <li>subject line + preview text set, and preview text matches the ticket</li>
+        <li>sender name / sender email / reply-to are the approved ones</li>
+        <li>correct email group assigned</li>
+        <li>ad modules sized right for their layout (600px hero ads: 200–400px tall)</li>
+        <li>ACS logo: top left, 30% scale, blue-on-white or white-on-blue</li>
+      </ul>
+    </div>
+  </section>
+</div>
+
+<script>
+/* ============ brand data (from the New Brand Email Guidelines) ============ */
+const PALETTE = [
+  {name:'carbon black',         hex:'251F20', use:'text'},
+  {name:'chromium blue',        hex:'412BFD', use:'hyperlinks'},
+  {name:'tungsten grey',        hex:'EDEDED', use:'dividers'},
+  {name:'titanium white',       hex:'FFFFFF', use:'background'},
+  {name:'cupric blue',          hex:'6FEDEE', use:'call-out border'},
+  {name:'light cupric blue',    hex:'E2FBFC', use:'call-out bg'},
+  {name:'methyl orange',        hex:'FF4601', use:'sparingly'},
+  {name:'vanadium yellow',      hex:'FFCA00', use:'call-out border'},
+  {name:'light vanadium yellow',hex:'FFE582', use:'call-out bg'},
+];
+const PALSET = new Set(PALETTE.map(p=>p.hex));
+const TYPE_SCALE = {12:'P3 caption',14:'P2 body',16:'P1 / button / link',20:'H3',22:'H2',24:'H1',36:'Hero'};
+const BUTTON_COMBOS = [ // background the button sits on → allowed button fills
+  {bg:'412BFD', btn:'6FEDEE', text:'412BFD'},
+  {bg:'412BFD', btn:'412BFD', text:'FFFFFF'},
+  {bg:'412BFD', btn:'FFFFFF', text:'412BFD'},
+  {bg:'FFFFFF', btn:'412BFD', text:'FFFFFF'},
+  {bg:'FFFFFF', btn:'FFFFFF', text:'251F20'},
+  {bg:'FFFFFF', btn:'251F20', text:'FFFFFF'},
+];
+
+/* ============ helpers ============ */
+function toHex(c){
+  if(!c) return null;
+  c = c.trim().toLowerCase();
+  if(['transparent','inherit','initial','none','currentcolor','unset'].includes(c)) return null;
+  let m = c.match(/^#([0-9a-f]{3})\b/);
+  if(m){ const s=m[1]; return (s[0]+s[0]+s[1]+s[1]+s[2]+s[2]).toUpperCase(); }
+  m = c.match(/^#([0-9a-f]{6})\b/);
+  if(m) return m[1].toUpperCase();
+  m = c.match(/^rgba?\(([^)]+)\)/);
+  if(m){
+    const p = m[1].split(',').map(x=>parseFloat(x));
+    if(p.length>=3 && p.slice(0,3).every(v=>!isNaN(v)))
+      return p.slice(0,3).map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,'0')).join('').toUpperCase();
+  }
+  const named = {white:'FFFFFF',black:'000000',red:'FF0000',blue:'0000FF',gray:'808080',grey:'808080'};
+  return named[c] || null;
+}
+function hexRgb(h){ return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]; }
+function dist(a,b){ return Math.sqrt((a[0]-b[0])**2+(a[1]-b[1])**2+(a[2]-b[2])**2); }
+function nearest(hex){
+  const rgb = hexRgb(hex); let best=null;
+  for(const p of PALETTE){ const d=dist(rgb,hexRgb(p.hex)); if(!best||d<best.d) best={p,d}; }
+  return best;
+}
+function esc(s){ return (s||'').replace(/[&<>]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+function snip(el, n=42){
+  let t = (el && el.textContent||'').replace(/\s+/g,' ').trim();
+  if(!t && el && el.getAttribute) t = (el.getAttribute('alt')||el.getAttribute('title')||'').trim();
+  return t.length>n ? t.slice(0,n)+'…' : t;
+}
+function styleProp(styleStr, prop){
+  if(!styleStr) return null;
+  const re = new RegExp('(?:^|;)\\s*'+prop.replace(/-/g,'\\-')+'\\s*:\\s*([^;]+)','i');
+  const m = styleStr.match(re);
+  return m ? m[1].trim() : null;
+}
+function inlineBg(el){ // nearest explicit background walking up
+  let cur = el;
+  while(cur && cur.getAttribute){
+    const s = cur.getAttribute('style');
+    const bg = styleProp(s,'background-color') || styleProp(s,'background');
+    const h = bg ? toHex(bg.split(' ')[0]) : (cur.getAttribute('bgcolor') ? toHex(cur.getAttribute('bgcolor')) : null);
+    if(h) return h;
+    cur = cur.parentElement;
+  }
+  return null;
+}
+function inlineColor(el){ // nearest explicit text color walking up (incl. <font color>)
+  let cur = el;
+  while(cur && cur.getAttribute){
+    const c = toHex(styleProp(cur.getAttribute('style'),'color'));
+    if(c) return c;
+    if(cur.tagName==='FONT' && cur.getAttribute('color')){ const f=toHex(cur.getAttribute('color')); if(f) return f; }
+    cur = cur.parentElement;
+  }
+  return null;
+}
+function parsePad(pad){ // returns {t,r,b,l} in px or null
+  if(!pad) return null;
+  const p = pad.replace(/px/g,'').trim().split(/\s+/).map(Number);
+  if(p.some(isNaN)) return null;
+  if(p.length===1) return {t:p[0],r:p[0],b:p[0],l:p[0]};
+  if(p.length===2) return {t:p[0],r:p[1],b:p[0],l:p[1]};
+  if(p.length===3) return {t:p[0],r:p[1],b:p[2],l:p[1]};
+  return {t:p[0],r:p[1],b:p[2],l:p[3]};
+}
+function listQuote(arr, max=3){
+  const shown = arr.slice(0,max).map(s=>'"'+s+'"');
+  const more = arr.length>max ? ` (+${arr.length-max} more)` : '';
+  return shown.join(', ')+more;
+}
+
+/* ============ check engine — comments come out in Slack voice ============ */
+function runChecks(html){
+  const findings = [];
+  const add = (sev, comment, guide)=>findings.push({sev, comment, guide});
+  const doc = new DOMParser().parseFromString(html,'text/html');
+
+  /* ---- images: alt text + file type ---- */
+  const noAlt = [], badExt = [];
+  [...doc.querySelectorAll('img')].forEach(img=>{
+    const alt = img.getAttribute('alt');
+    const src = (img.getAttribute('src')||'').split('?')[0];
+    const file = decodeURIComponent(src.split('/').pop()||'') || '(no src)';
+    if(alt===null || alt.trim()==='') noAlt.push(file);
+    const ext = (file.match(/\.(\w+)$/)||[])[1];
+    if(ext && !['png','jpg','jpeg'].includes(ext.toLowerCase())) badExt.push(file);
+  });
+  if(noAlt.length) add('issue',
+    (noAlt.length===1 ? `image is missing alt text — <code>${esc(noAlt[0])}</code>`
+      : `${noAlt.length} images are missing alt text — ${noAlt.map(f=>'<code>'+esc(f)+'</code>').join(', ')}`),
+    'image assets — alt text is required');
+  badExt.forEach(f=> add('issue', `image <code>${esc(f)}</code> should be .png or .jpg`, 'image assets — file types'));
+
+  /* ---- colors: off-brand + near-miss typos ---- */
+  const colorSeen = {}; // hex|prop -> {hex,prop,count,samples[]}
+  const note = (hex,prop,sample)=>{
+    const key = hex+'|'+prop;
+    if(!colorSeen[key]) colorSeen[key]={hex,prop,count:0,samples:[]};
+    colorSeen[key].count++;
+    if(sample && colorSeen[key].samples.length<3 && !colorSeen[key].samples.includes(sample)) colorSeen[key].samples.push(sample);
+  };
+  [...doc.querySelectorAll('[style],[bgcolor],font[color]')].forEach(el=>{
+    const s = el.getAttribute('style')||'';
+    const c = toHex(styleProp(s,'color')); if(c) note(c,'text',snip(el,36));
+    const bgRaw = styleProp(s,'background-color') || styleProp(s,'background');
+    const bg = bgRaw ? toHex(bgRaw.split(' ')[0]) : null; if(bg) note(bg,'background',snip(el,36));
+    const bgc = el.getAttribute('bgcolor'); if(bgc){ const h=toHex(bgc); if(h) note(h,'background',snip(el,36)); }
+    if(el.tagName==='FONT' && el.getAttribute('color')){ const f=toHex(el.getAttribute('color')); if(f) note(f,'text',snip(el,36)); }
+  });
+  [...doc.querySelectorAll('style')].forEach(st=>{ // <style> blocks, no element context
+    const txt = st.textContent||'';
+    let m; const re=/(?:^|[;{]\s*)(color|background(?:-color)?)\s*:\s*([^;}!]+)/gi;
+    while((m=re.exec(txt))){
+      const prop = m[1].toLowerCase().startsWith('background') ? 'background' : 'text';
+      const hex = toHex(m[2].trim().split(' ')[0]);
+      if(hex) note(hex,prop,'(in the <style> block)');
+    }
+  });
+  Object.values(colorSeen).forEach(c=>{
+    if(PALSET.has(c.hex)) return;
+    const near = nearest(c.hex);
+    const inStyle = c.samples.includes('(in the <style> block)');
+    const realSamples = c.samples.filter(s=>s!=='(in the <style> block)');
+    const where = realSamples.length ? ` — e.g. near ${esc(listQuote(realSamples,2))}`
+      : (inStyle ? ' — set in the &lt;style&gt; block up top' : '');
+    const times = c.count>1 ? ` (used ${c.count}×)` : '';
+    if(near.d <= 10){
+      add('issue', `<code>#${c.hex}</code> looks like a typo of ${near.p.name} — should be <code>#${near.p.hex}</code>${times}${where}`,
+        'color usage — brand palette');
+    } else if(c.prop==='text'){
+      const suggest = (near.p.hex==='251F20' || dist(hexRgb(c.hex),hexRgb('251F20'))<80)
+        ? 'carbon black <code>#251F20</code>' : `${near.p.name} <code>#${near.p.hex}</code>`;
+      add('issue', `update text color — <code>#${c.hex}</code> isn't in the palette${times}, closest brand color is ${suggest}${where}`,
+        'color usage — primary palette');
+    } else {
+      add('issue', `update background color — <code>#${c.hex}</code> isn't in the palette${times}, closest is ${near.p.name} <code>#${near.p.hex}</code>${where}`,
+        'color usage — brand palette');
+    }
+  });
+
+  /* ---- text with NO color set anywhere → will default to the wrong color ---- */
+  const unstyled = [];
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+  let tn;
+  while((tn = walker.nextNode())){
+    const txt = tn.textContent.replace(/\s+/g,' ').trim();
+    if(txt.length < 3) continue;
+    const el = tn.parentElement;
+    if(!el || ['STYLE','SCRIPT','TITLE'].includes(el.tagName)) continue;
+    if(inlineColor(el)===null){
+      const s = txt.length>36 ? txt.slice(0,36)+'…' : txt;
+      if(unstyled.length<4 && !unstyled.includes(s)) unstyled.push(s);
+      else if(unstyled.length>=4) { unstyled.overflow = true; }
+    }
+  }
+  if(unstyled.length) add('warn',
+    `some text doesn't have a color selected so it'll default to the wrong color — set it explicitly (carbon black <code>#251F20</code>): ${esc(listQuote(unstyled,3))}`,
+    'color usage — carbon black is default text');
+
+  /* ---- typography: off-scale sizes + non-Arial ---- */
+  const styleText = [...doc.querySelectorAll('[style]')].map(e=>e.getAttribute('style')).join(';')
+    + ';' + [...doc.querySelectorAll('style')].map(s=>s.textContent).join(';');
+  const sizeSeen = {};
+  let sm; const sre=/font-size\s*:\s*(\d+(?:\.\d+)?)px/gi;
+  while((sm=sre.exec(styleText))){ const px=Math.round(+sm[1]); if(px>0) sizeSeen[px]=(sizeSeen[px]||0)+1; } // 0px is an email layout hack, skip
+  const scale = Object.keys(TYPE_SCALE).map(Number);
+  Object.keys(sizeSeen).map(Number).sort((a,b)=>a-b).forEach(px=>{
+    if(!scale.includes(px)){
+      const close = scale.reduce((a,b)=>Math.abs(b-px)<Math.abs(a-px)?b:a);
+      add('warn', `<code>${px}px</code> text isn't on the type scale (used ${sizeSeen[px]}×) — closest approved size is <code>${close}px</code> (${TYPE_SCALE[close]})`,
+        'typography — approved sizes 12/14/16/20/22/24/36');
+    }
+  });
+  const fams = new Set();
+  let fmm; const fre=/font-family\s*:\s*([^;"'}]+)/gi;
+  while((fmm=fre.exec(styleText))){ fams.add(fmm[1].trim().toLowerCase()); }
+  fams.forEach(f=>{
+    if(!/arial/.test(f)) add('warn', `non-Arial font declared — <code>${esc(f)}</code>, brand font is Arial`, 'typography — Arial');
+  });
+
+  /* ---- links + buttons ---- */
+  const noUnderline = [], wrongLinkColor = {};
+  [...doc.querySelectorAll('a[href]')].forEach(a=>{
+    const s = a.getAttribute('style')||'';
+    const looksLikeButton = /border-radius/i.test(s) ||
+      (/background-color/i.test(s) && /display\s*:\s*inline-block/i.test(s));
+
+    if(looksLikeButton){
+      const label = snip(a,32) || '(button)';
+      // corner radius
+      const rad = styleProp(s,'border-radius');
+      if(rad && parseInt(rad)!==30)
+        add('issue', `button "${esc(label)}" corner radius is <code>${esc(rad)}</code> — should be <code>30px</code>`, 'buttons — 30px corner radius');
+      // inner padding
+      const pad = parsePad(styleProp(s,'padding'));
+      if(pad){
+        if(pad.t!==pad.b){
+          const which = pad.b>pad.t ? 'bottom is bigger than top' : 'top is bigger than bottom';
+          add('issue', `button "${esc(label)}" padding ${which} (<code>${pad.t}px</code> / <code>${pad.b}px</code>) — should be 10px top and bottom`, 'buttons — inner padding 10px t/b');
+        } else if(pad.t!==10){
+          add('warn', `button "${esc(label)}" top/bottom padding is <code>${pad.t}px</code> — spec is 10px`, 'buttons — inner padding 10px t/b');
+        }
+        if(pad.l!==30 || pad.r!==30)
+          add('warn', `button "${esc(label)}" left/right padding is <code>${pad.l}px/${pad.r}px</code> — spec is 30px`, 'buttons — inner padding 30px l/r');
+      }
+      // color combo
+      const btn = toHex(styleProp(s,'background-color'));
+      if(btn){
+        const allowed = BUTTON_COMBOS.filter(c=>c.btn===btn);
+        if(!allowed.length){
+          add('issue', `button "${esc(label)}" fill <code>#${btn}</code> isn't an approved button color`, 'buttons — acceptable color combinations');
+        } else {
+          const cellBg = inlineBg(a.parentElement);
+          if(cellBg && !allowed.some(c=>c.bg===cellBg)){
+            const want = [...new Set(allowed.map(c=>'#'+c.bg))].join(' or ');
+            add('warn', `button "${esc(label)}" (<code>#${btn}</code> fill) sits on a <code>#${cellBg}</code> background — that combo isn't approved, this button belongs on <code>${want}</code>`, 'buttons — acceptable color combinations');
+          }
+          // button text color
+          const textCols = new Set();
+          const own = toHex(styleProp(s,'color')); if(own) textCols.add(own);
+          [...a.querySelectorAll('[style]')].forEach(x=>{ const cc=toHex(styleProp(x.getAttribute('style'),'color')); if(cc) textCols.add(cc); });
+          const okText = allowed.some(c=>textCols.has(c.text));
+          if(textCols.size && !okText){
+            const want = [...new Set(allowed.map(c=>'#'+c.text))].join(' or ');
+            add('warn', `button "${esc(label)}" text color should be <code>${want}</code> for a <code>#${btn}</code> button`, 'buttons — acceptable color combinations');
+          }
+        }
+      }
+      return; // buttons don't need underline
+    }
+
+    // regular hyperlink → underlined + chromium blue
+    const label = snip(a,40) || a.getAttribute('href');
+    const deco = styleProp(s,'text-decoration') || '';
+    const childU = a.querySelector('u') || [...a.querySelectorAll('[style]')].some(x=>/text-decoration\s*:[^;]*underline/i.test(x.getAttribute('style')||''));
+    if(/none/.test(deco) && !childU && !a.querySelector('img')) noUnderline.push(label);
+
+    if(!a.querySelector('img')){ // image links don't need a text color
+      const cols = new Set();
+      const own = toHex(styleProp(s,'color')); if(own) cols.add(own);
+      [...a.querySelectorAll('[style],font[color]')].forEach(x=>{
+        const cc = toHex(styleProp(x.getAttribute('style'),'color')) || (x.tagName==='FONT'?toHex(x.getAttribute('color')):null);
+        if(cc) cols.add(cc);
+      });
+      if(cols.size && !cols.has('412BFD')){
+        const c = [...cols][0];
+        // near-miss typos of chromium blue are already reported by the color check
+        if(dist(hexRgb(c),hexRgb('412BFD')) > 10)
+          (wrongLinkColor[c] = wrongLinkColor[c]||[]).push(label);
+      }
+    }
+  });
+  if(noUnderline.length) add('issue',
+    `links missing underline — ${esc(listQuote(noUnderline,3))}`,
+    'hyperlinks — style: underlined');
+  Object.entries(wrongLinkColor).forEach(([hex,labels])=>{
+    add('issue', `update link colors — ${esc(listQuote(labels,3))} ${labels.length>1?'are':'is'} <code>#${hex}</code>, should be chromium blue <code>#412BFD</code>`,
+      'hyperlinks — color #412BFD');
+  });
+
+  /* ---- button cell outer padding (top 0 / bottom 20 / l+r 20) ---- */
+  [...doc.querySelectorAll('.elq-button-cell')].forEach(td=>{
+    const pad = parsePad(styleProp(td.getAttribute('style'),'padding'));
+    if(pad && !(pad.t===0 && pad.b===20 && pad.l===20 && pad.r===20)){
+      add('warn', `button block outer padding is <code>${pad.t}/${pad.r}/${pad.b}/${pad.l}px</code> — spec is 0 top, 20px bottom, 20px left/right`, 'buttons — outer padding');
+    }
+  });
+
+  /* ---- text box left/right padding (20px) ---- */
+  const badTextPad = new Set();
+  [...doc.querySelectorAll('.elq-text-cell')].forEach(td=>{
+    const pad = parsePad(styleProp(td.getAttribute('style'),'padding'));
+    if(pad && (pad.l!==20 || pad.r!==20)) badTextPad.add(`${pad.l}px/${pad.r}px`);
+  });
+  badTextPad.forEach(p=> add('warn', `text box left/right padding is <code>${p}</code> — spec is 20px`, 'text box padding — 20px l/r'));
+
+  /* ---- emoji in lists ---- */
+  const emojiRe = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/u;
+  const emojiLis = [];
+  [...doc.querySelectorAll('li')].forEach(li=>{ if(emojiRe.test(li.textContent||'')) emojiLis.push(snip(li,36)); });
+  if(emojiLis.length) add('issue', `emoji in bullet list — not allowed per guidelines: ${esc(listQuote(emojiLis,2))}`, 'emoji usage — not in lists');
+
+  return findings;
+}
+
+/* ============ rendering ============ */
+function stripHtml(s){ const d=document.createElement('div'); d.innerHTML=s; return (d.textContent||'').replace(/\s+/g,' ').trim(); }
+
+function render(findings){
+  const order = {issue:0, warn:1};
+  findings.sort((a,b)=>order[a.sev]-order[b.sev]);
+  const nIssue = findings.filter(f=>f.sev==='issue').length;
+  const nWarn = findings.filter(f=>f.sev==='warn').length;
+
+  const sum = document.getElementById('summary');
+  sum.innerHTML = '';
+  if(nIssue){ const c=document.createElement('span'); c.className='chip issue'; c.textContent=`${nIssue} to fix`; sum.appendChild(c); }
+  if(nWarn){ const c=document.createElement('span'); c.className='chip warn'; c.textContent=`${nWarn} worth a look`; sum.appendChild(c); }
+  if(!findings.length){ const c=document.createElement('span'); c.className='chip ok'; c.textContent='looks good 👍'; sum.appendChild(c); }
+
+  const res = document.getElementById('results');
+  res.innerHTML = '';
+  if(!findings.length) res.innerHTML = '<div class="empty">no brand issues found — still eyeball the manual list below.</div>';
+  findings.forEach(f=>{
+    const d=document.createElement('div'); d.className='finding '+f.sev;
+    d.innerHTML = `<div class="c">${f.sev==='issue'?'🔴':'🟡'} ${f.comment}</div><div class="g">guideline: ${esc(f.guide)}</div>`;
+    res.appendChild(d);
+  });
+
+  // Slack-ready plain text
+  const lines = findings.map(f=>stripHtml(f.comment));
+  if(findings.length) lines.push('else looks good');
+  else lines.push('looks good, no brand issues found');
+  document.getElementById('copyout').textContent = lines.join('\n\n');
+  document.getElementById('copywrap').style.display = 'block';
+}
+
+/* palette legend */
+document.getElementById('palette').innerHTML = PALETTE.map(p=>
+  `<span class="sw"><b style="background:#${p.hex}"></b>${p.name} #${p.hex}</span>`).join('');
+
+/* wiring */
+document.getElementById('check').addEventListener('click', ()=>{
+  const html = document.getElementById('input').value;
+  if(!html.trim()) return;
+  render(runChecks(html));
+});
+document.getElementById('clear').addEventListener('click', ()=>{
+  document.getElementById('input').value='';
+  document.getElementById('results').innerHTML='<div class="empty">Paste an email and click <b>Check email</b>.</div>';
+  document.getElementById('summary').innerHTML='';
+  document.getElementById('copywrap').style.display='none';
+});
+document.getElementById('copybtn').addEventListener('click', ()=>{
+  navigator.clipboard.writeText(document.getElementById('copyout').textContent)
+    .then(()=>{ const b=document.getElementById('copybtn'); b.textContent='copied!'; setTimeout(()=>b.textContent='Copy comments',1500); });
+});
+</script>
+</body>
+</html>
