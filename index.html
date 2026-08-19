@@ -41,12 +41,18 @@
   .chip.issue{ background:var(--issuebg); color:var(--issue); }
   .chip.warn{ background:var(--warnbg); color:var(--warn); }
   .chip.ok{ background:var(--okbg); color:var(--ok); }
-  .finding{ border:1px solid var(--line); border-left-width:4px; border-radius:8px; padding:11px 13px; margin-bottom:10px; }
+  .finding{ position:relative; border:1px solid var(--line); border-left-width:4px; border-radius:8px; padding:11px 34px 11px 13px; margin-bottom:10px; }
   .finding.issue{ border-left-color:var(--issue); }
   .finding.warn{ border-left-color:var(--warn); }
   .finding .c{ font-size:14px; }
+  .finding .loc{ display:inline-block; font-size:11px; font-weight:bold; margin-top:7px; padding:3px 9px; border-radius:20px;
+    background:var(--okbg); color:var(--ok); border:1px solid rgba(125,125,125,.25); }
   .finding .g{ font-size:11px; color:var(--muted); margin-top:5px; text-transform:uppercase; letter-spacing:.4px; }
   .finding code{ background:rgba(125,125,125,.16); padding:1px 5px; border-radius:4px; font-size:12px; }
+  .finding .x{ position:absolute; top:7px; right:8px; width:22px; height:22px; line-height:20px; text-align:center;
+    border-radius:50%; border:1px solid var(--line); background:transparent; color:var(--muted); font-size:14px;
+    font-weight:bold; cursor:pointer; padding:0; }
+  .finding .x:hover{ background:var(--issuebg); color:var(--issue); border-color:var(--issue); }
   .swatchbar{ display:flex; gap:6px 14px; flex-wrap:wrap; margin-top:12px; }
   .sw{ display:flex; align-items:center; gap:6px; font-size:11px; color:var(--muted); }
   .sw b{ width:14px; height:14px; border-radius:3px; border:1px solid rgba(125,125,125,.4); display:inline-block; }
@@ -185,12 +191,43 @@ function cleanFile(src){ // strip Eloqua {guid}_ prefix off image filenames
   const file = decodeURIComponent((src||'').split('?')[0].split('/').pop()||'');
   return file.replace(/^\{[0-9a-f-]+\}_/i,'') || '(no src)';
 }
+function sectionSnippet(el, n=42){ // short human label for a section: first bit of copy, or an image's alt/filename
+  if(!el) return '';
+  let t = (el.textContent||'').replace(/\s+/g,' ').trim();
+  if(!t){ const img = el.querySelector && el.querySelector('img'); if(img) t = (img.getAttribute('alt')||cleanFile(img.getAttribute('src'))||'').trim(); }
+  return t.length>n ? t.slice(0,n).trim()+'…' : t;
+}
 
 /* ============ check engine - comments come out in Slack voice ============ */
 function runChecks(html){
   const findings = [];
-  const add = (sev, comment, guide)=>findings.push({sev, comment, guide});
+  const add = (sev, comment, guide, loc)=>findings.push({sev, comment, guide, section: locLabel(loc)});
   const doc = new DOMParser().parseFromString(html,'text/html');
+
+  /* ---- section locator: which block of the email a note points at ----
+     content sections are the innermost Eloqua rows, numbered top to bottom.
+     header/footer cells get named instead of numbered. */
+  const contentRows = [...doc.querySelectorAll('table.row, .row')].filter(r=>!r.querySelector('table.row, .row'));
+  function sectionOf(el){
+    if(!el || !el.closest) return null;
+    const hf = el.closest('.elq-header-footer-cell');
+    if(hf) return isHeader(el) ? 'header' : 'footer';
+    const row = el.closest('table.row, .row');
+    const idx = row ? contentRows.indexOf(row) : -1;
+    const snip = sectionSnippet(el);
+    if(idx>=0) return `section ${idx+1}${snip?` — “${snip}”`:''}`;
+    return snip ? `“${snip}”` : null;
+  }
+  function locLabel(loc){ // element | element[] | string | null -> display string
+    if(!loc) return '';
+    if(typeof loc === 'string') return loc;
+    const els = Array.isArray(loc) ? loc : [loc];
+    const labels = [];
+    els.forEach(e=>{ const s=sectionOf(e); if(s && !labels.includes(s)) labels.push(s); });
+    if(!labels.length) return '';
+    if(labels.length<=2) return labels.join('; ');
+    return labels.slice(0,2).join('; ')+`; +${labels.length-2} more`;
+  }
 
   /* The "view online" header bar is boilerplate we don't touch.
      A header/footer cell is the header if it mentions the online version,
@@ -228,43 +265,49 @@ function runChecks(html){
     if(isHeader(img)) return;
     const alt = img.getAttribute('alt');
     const file = cleanFile(img.getAttribute('src'));
-    if(alt===null || alt.trim()==='') noAlt.push(file);
+    // the ACS brandmark/logo is a known decorative asset - no alt text expected
+    const isBrandmark = /^ACS[_-]?Brandmark/i.test(file);
+    if(!isBrandmark && (alt===null || alt.trim()==='')) noAlt.push({file, el:img});
     const ext = (file.match(/\.(\w+)$/)||[])[1];
-    if(ext && !['png','jpg','jpeg'].includes(ext.toLowerCase())) badExt.push(file);
+    if(ext && !['png','jpg','jpeg'].includes(ext.toLowerCase())) badExt.push({file, el:img});
   });
   if(noAlt.length) add('issue',
-    (noAlt.length===1 ? `image is missing alt text: <code>${esc(noAlt[0])}</code>`
-      : `${noAlt.length} images are missing alt text: ${noAlt.map(f=>'<code>'+esc(f)+'</code>').join(', ')}`),
-    'image assets - alt text is required');
-  badExt.forEach(f=> add('issue', `image <code>${esc(f)}</code> should be .png or .jpg`, 'image assets - file types'));
+    (noAlt.length===1 ? `image is missing alt text: <code>${esc(noAlt[0].file)}</code>`
+      : `${noAlt.length} images are missing alt text: ${noAlt.map(x=>'<code>'+esc(x.file)+'</code>').join(', ')}`),
+    'image assets - alt text is required', noAlt.map(x=>x.el));
+  badExt.forEach(x=> add('issue', `image <code>${esc(x.file)}</code> should be .png or .jpg`, 'image assets - file types', x.el));
 
   /* ---- colors: collect exact copy per hex ---- */
   const textColors = {}; // hex -> [exact copy]
   const bgColors = {};   // hex -> [exact copy]
-  const noteText = (hex,text)=>{
+  const textEls = {};    // hex -> [element] (for section locating)
+  const bgEls = {};      // hex -> [element]
+  const noteText = (hex,text,el)=>{
     if(!textColors[hex]) textColors[hex]=[];
     if(text && !textColors[hex].includes(text)) textColors[hex].push(text);
     else if(!text && !textColors[hex].length) textColors[hex].push('');
+    (textEls[hex]=textEls[hex]||[]).push(el);
   };
-  const noteBg = (hex,text)=>{
+  const noteBg = (hex,text,el)=>{
     if(!bgColors[hex]) bgColors[hex]=[];
     if(!bgColors[hex].includes(text)) bgColors[hex].push(text);
+    (bgEls[hex]=bgEls[hex]||[]).push(el);
   };
   [...doc.querySelectorAll('[style],[bgcolor],font[color]')].forEach(el=>{
     if(isHeader(el)) return;
     const s = el.getAttribute('style')||'';
     const hasText = (el.textContent||'').trim().length>0;
     const c = toHex(styleProp(s,'color'));
-    if(c && hasText) noteText(c, fullText(el)); // a text color on something with no text has no visual effect
+    if(c && hasText) noteText(c, fullText(el), el); // a text color on something with no text has no visual effect
     if(el.tagName==='FONT' && el.getAttribute('color') && hasText){
-      const f=toHex(el.getAttribute('color')); if(f) noteText(f, fullText(el));
+      const f=toHex(el.getAttribute('color')); if(f) noteText(f, fullText(el), el);
     }
     if(!skipBg(el)){
       const bgRaw = styleProp(s,'background-color') || styleProp(s,'background');
       const bg = bgRaw ? toHex(bgRaw.split(' ')[0]) : null;
-      if(bg) noteBg(bg, fullText(el));
+      if(bg) noteBg(bg, fullText(el), el);
       const bgc = el.getAttribute('bgcolor');
-      if(bgc){ const h=toHex(bgc); if(h) noteBg(h, fullText(el)); }
+      if(bgc){ const h=toHex(bgc); if(h) noteBg(h, fullText(el), el); }
     }
   });
 
@@ -281,20 +324,21 @@ function runChecks(html){
     if(PALSET.has(hex)) return;
     const near = nearest(hex);
     const r = refs(texts);
+    const loc = textEls[hex]||[];
     if(near.d <= 10){
       const where = r.list ? ` (${r.list})` : (r.example ? ` (e.g. ${r.example} and more)` : '');
       add('issue', `<code>#${hex}</code> looks like a typo of ${near.p.name}, should be <code>#${near.p.hex}</code>${where}`,
-        'color usage - brand palette');
+        'color usage - brand palette', loc);
     } else {
       const suggest = (near.p.hex==='251F20' || dist(hexRgb(hex),hexRgb('251F20'))<80)
         ? 'carbon black <code>#251F20</code>' : `${near.p.name} <code>#${near.p.hex}</code>`;
       if(r.list){
         const verb = texts.filter(Boolean).length>1 ? 'are' : 'is';
-        add('issue', `update text color, ${r.list} ${verb} <code>#${hex}</code>, should be ${suggest}`, 'color usage - primary palette');
+        add('issue', `update text color, ${r.list} ${verb} <code>#${hex}</code>, should be ${suggest}`, 'color usage - primary palette', loc);
       } else if(r.example){
-        add('issue', `update text color, a lot of the copy is <code>#${hex}</code>, should be ${suggest} (e.g. ${r.example})`, 'color usage - primary palette');
+        add('issue', `update text color, a lot of the copy is <code>#${hex}</code>, should be ${suggest} (e.g. ${r.example})`, 'color usage - primary palette', loc);
       } else {
-        add('issue', `update text color, <code>#${hex}</code> isn't in the palette, should be ${suggest}`, 'color usage - primary palette');
+        add('issue', `update text color, <code>#${hex}</code> isn't in the palette, should be ${suggest}`, 'color usage - primary palette', loc);
       }
     }
   });
@@ -302,18 +346,19 @@ function runChecks(html){
     if(PALSET.has(hex)) return;
     const near = nearest(hex);
     const r = refs(texts);
+    const loc = bgEls[hex]||[];
     const where = r.list ? ` (the section with ${r.list})` : (r.example ? ` (e.g. the section with ${r.example})` : '');
     if(near.d <= 10){
       add('issue', `<code>#${hex}</code> background looks like a typo of ${near.p.name}, should be <code>#${near.p.hex}</code>${where}`,
-        'color usage - brand palette');
+        'color usage - brand palette', loc);
     } else {
       add('issue', `update background color, <code>#${hex}</code> isn't in the palette, closest is ${near.p.name} <code>#${near.p.hex}</code>${where}`,
-        'color usage - brand palette');
+        'color usage - brand palette', loc);
     }
   });
 
   /* ---- default text colors: copy with no color set, or the #000000 default on wrappers ---- */
-  const fallback = [];
+  const fallback = [], fallbackEls = [];
   const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
   let tn;
   while((tn = walker.nextNode())){
@@ -326,14 +371,14 @@ function runChecks(html){
     const c = inlineColor(el);
     if(c===null || c==='000000'){
       const s = txt.length>140 ? txt.slice(0,140).trim()+'...' : txt;
-      if(!fallback.includes(s)) fallback.push(s);
+      if(!fallback.includes(s)){ fallback.push(s); fallbackEls.push(el); }
     }
   }
   if(fallback.length){
     const more = fallback.length-1;
     const ref = more>0 ? `e.g. ${esc('"'+fallback[0]+'"')} and ${more} more spot${more>1?'s':''}` : esc('"'+fallback[0]+'"');
     add('issue', `update default text colors, some copy is falling back to the default black (${ref}), should be carbon black <code>#251F20</code>`,
-      'color usage - carbon black is the text color');
+      'color usage - carbon black is the text color', fallbackEls);
   }
 
   /* ---- default link color: the a{} rule in the stylesheet ---- */
@@ -347,13 +392,15 @@ function runChecks(html){
     }
   });
   defLinkHexes.forEach(hex=>{
-    add('issue', `update default link color, <code>#${hex}</code> should be chromium blue <code>#412BFD</code>`, 'hyperlinks - color #412BFD');
+    add('issue', `update default link color, <code>#${hex}</code> should be chromium blue <code>#412BFD</code>`, 'hyperlinks - color #412BFD', 'email stylesheet (default link style)');
   });
 
   /* ---- typography: off-scale sizes + non-Arial, with the exact copy ---- */
   const scale = Object.keys(TYPE_SCALE).map(Number);
   const sizeUses = {}; // px -> [exact copy]
+  const sizeEls = {};  // px -> [element]
   const badFonts = {}; // family -> exact copy
+  const badFontEls = {}; // family -> element
   [...doc.querySelectorAll('[style]')].forEach(el=>{
     // typography is checked on body copy only: header/footer blocks are standard across emails
     if(el.closest && el.closest('.elq-header-footer-cell')) return;
@@ -365,10 +412,11 @@ function runChecks(html){
       if(px>0 && !scale.includes(px)){ // font-size:0 is an email layout hack, skip
         const t = fullText(el);
         if(t){ (sizeUses[px]=sizeUses[px]||[]).includes(t) || sizeUses[px].push(t); }
+        (sizeEls[px]=sizeEls[px]||[]).push(el);
       }
     }
     const fam = styleProp(s,'font-family');
-    if(fam && !/arial/i.test(fam) && !badFonts[fam]) badFonts[fam] = fullText(el);
+    if(fam && !/arial/i.test(fam) && !badFonts[fam]){ badFonts[fam] = fullText(el); badFontEls[fam] = el; }
   });
   Object.keys(sizeUses).map(Number).sort((a,b)=>a-b).forEach(px=>{
     const texts = sizeUses[px];
@@ -376,20 +424,21 @@ function runChecks(html){
     let bestD = Infinity; scale.forEach(v=>{ bestD = Math.min(bestD, Math.abs(v-px)); });
     const close = scale.filter(v=>Math.abs(v-px)===bestD);
     const want = close.map(v=>`<code>${v}px</code> (${TYPE_SCALE[v]})`).join(' or ');
+    const loc = sizeEls[px]||[];
     if(texts.length===1){
       add('warn', `${esc('"'+texts[0]+'"')} is <code>${px}px</code>, that's not on the type scale, closest approved size is ${want}`,
-        'typography - approved sizes 12/14/16/20/22/24/36');
+        'typography - approved sizes 12/14/16/20/22/24/36', loc);
     } else if(texts.length<=4){
       add('warn', `${esc(quoteList(texts))} are <code>${px}px</code>, that's not on the type scale, closest approved size is ${want}`,
-        'typography - approved sizes 12/14/16/20/22/24/36');
+        'typography - approved sizes 12/14/16/20/22/24/36', loc);
     } else {
       add('warn', `a lot of the copy is <code>${px}px</code>, that's not on the type scale, closest approved size is ${want} (e.g. ${esc('"'+texts[0]+'"')})`,
-        'typography - approved sizes 12/14/16/20/22/24/36');
+        'typography - approved sizes 12/14/16/20/22/24/36', loc);
     }
   });
   Object.entries(badFonts).forEach(([fam,text])=>{
     const where = text ? ` (${esc('"'+text+'"')})` : '';
-    add('warn', `non-Arial font declared, <code>${esc(fam)}</code>${where}, brand font is Arial`, 'typography - Arial');
+    add('warn', `non-Arial font declared, <code>${esc(fam)}</code>${where}, brand font is Arial`, 'typography - Arial', badFontEls[fam]);
   });
 
   /* ---- links + buttons ---- */
@@ -404,7 +453,7 @@ function runChecks(html){
     }
     return a.getAttribute('href')||'(link)';
   }
-  const noUnderline = [], wrongLinkColor = {}, noHover = [];
+  const noUnderline = [], noUnderlineEls = [], wrongLinkColor = {}, wrongLinkColorEls = {}, noHover = [], noHoverEls = [];
   [...doc.querySelectorAll('a[href]')].forEach(a=>{
     if(isHeader(a)) return;
     const s = a.getAttribute('style')||'';
@@ -413,7 +462,7 @@ function runChecks(html){
     // header/footer blocks and the social icon strip are standard across emails, skip them.
     const inHeaderFooter = a.closest && a.closest('.elq-header-footer-cell');
     const isSocialIcon = /facebook\.|instagram\.|linkedin\.|youtube\.|twitter\.|tiktok\.|x\.com\//i.test(a.getAttribute('href')||'') && !fullText(a,10);
-    if(!inHeaderFooter && !isSocialIcon && !(a.getAttribute('title')||'').trim()) noHover.push(linkLabel(a));
+    if(!inHeaderFooter && !isSocialIcon && !(a.getAttribute('title')||'').trim()){ noHover.push(linkLabel(a)); noHoverEls.push(a); }
     const looksLikeButton = /border-radius/i.test(s) ||
       (/background-color/i.test(s) && /display\s*:\s*inline-block/i.test(s));
 
@@ -421,17 +470,17 @@ function runChecks(html){
       const label = fullText(a,60) || '(button)';
       const rad = styleProp(s,'border-radius');
       if(rad && parseInt(rad)!==30)
-        add('issue', `button "${esc(label)}" corner radius is <code>${esc(rad)}</code>, should be <code>30px</code>`, 'buttons - 30px corner radius');
+        add('issue', `button "${esc(label)}" corner radius is <code>${esc(rad)}</code>, should be <code>30px</code>`, 'buttons - 30px corner radius', a);
       const pad = parsePad(styleProp(s,'padding'));
       if(pad){
         if(pad.t!==pad.b){
           const which = pad.b>pad.t ? 'bottom is bigger than top' : 'top is bigger than bottom';
-          add('issue', `button "${esc(label)}" padding ${which} (<code>${pad.t}px</code> / <code>${pad.b}px</code>), should be 10px top and bottom`, 'buttons - inner padding 10px t/b');
+          add('issue', `button "${esc(label)}" padding ${which} (<code>${pad.t}px</code> / <code>${pad.b}px</code>), should be 10px top and bottom`, 'buttons - inner padding 10px t/b', a);
         } else if(pad.t!==10){
-          add('warn', `button "${esc(label)}" top/bottom padding is <code>${pad.t}px</code>, spec is 10px`, 'buttons - inner padding 10px t/b');
+          add('warn', `button "${esc(label)}" top/bottom padding is <code>${pad.t}px</code>, spec is 10px`, 'buttons - inner padding 10px t/b', a);
         }
         if(pad.l!==30 || pad.r!==30)
-          add('warn', `button "${esc(label)}" left/right padding is <code>${pad.l}px/${pad.r}px</code>, spec is 30px`, 'buttons - inner padding 30px l/r');
+          add('warn', `button "${esc(label)}" left/right padding is <code>${pad.l}px/${pad.r}px</code>, spec is 30px`, 'buttons - inner padding 30px l/r', a);
       }
       return; // buttons don't need underline; fill/background combos are checked visually
     }
@@ -440,7 +489,7 @@ function runChecks(html){
     const label = fullText(a,80) || a.getAttribute('href');
     const deco = styleProp(s,'text-decoration') || '';
     const childU = a.querySelector('u') || [...a.querySelectorAll('[style]')].some(x=>/text-decoration\s*:[^;]*underline/i.test(x.getAttribute('style')||''));
-    if(/none/.test(deco) && !childU && !a.querySelector('img')) noUnderline.push(label);
+    if(/none/.test(deco) && !childU && !a.querySelector('img')){ noUnderline.push(label); noUnderlineEls.push(a); }
 
     if(!a.querySelector('img')){ // image links don't need a text color
       const cols = new Set();
@@ -452,37 +501,39 @@ function runChecks(html){
       if(cols.size && !cols.has('412BFD')){
         const c = [...cols][0];
         // near-miss typos of chromium blue are already reported by the color check
-        if(dist(hexRgb(c),hexRgb('412BFD')) > 10)
+        if(dist(hexRgb(c),hexRgb('412BFD')) > 10){
           (wrongLinkColor[c] = wrongLinkColor[c]||[]).push(label);
+          (wrongLinkColorEls[c] = wrongLinkColorEls[c]||[]).push(a);
+        }
       }
     }
   });
   if(noUnderline.length) add('issue',
     `links missing underline: ${esc(quoteList(noUnderline))}`,
-    'hyperlinks - style: underlined');
+    'hyperlinks - style: underlined', noUnderlineEls);
   if(noHover.length){
     const shown = noHover.length<=6 ? quoteList(noHover)
       : noHover.slice(0,5).map(t=>'"'+t+'"').join(', ')+` and ${noHover.length-5} more`;
-    add('issue', `${noHover.length===1?'link':'links'} missing hover text: ${esc(shown)}`, 'hyperlinks - hover text (title) required');
+    add('issue', `${noHover.length===1?'link':'links'} missing hover text: ${esc(shown)}`, 'hyperlinks - hover text (title) required', noHoverEls);
   }
   Object.entries(wrongLinkColor).forEach(([hex,labels])=>{
     add('issue', `update link colors, ${esc(quoteList(labels))} ${labels.length>1?'are':'is'} <code>#${hex}</code>, should be chromium blue <code>#412BFD</code>`,
-      'hyperlinks - color #412BFD');
+      'hyperlinks - color #412BFD', wrongLinkColorEls[hex]||[]);
   });
 
   /* ---- text box left/right padding (20px) ---- */
-  const badTextPad = new Set();
+  const badTextPad = {}; // "Lpx/Rpx" -> [element]
   [...doc.querySelectorAll('.elq-text-cell')].forEach(td=>{
     const pad = parsePad(styleProp(td.getAttribute('style'),'padding'));
-    if(pad && (pad.l!==20 || pad.r!==20)) badTextPad.add(`${pad.l}px/${pad.r}px`);
+    if(pad && (pad.l!==20 || pad.r!==20)){ const k=`${pad.l}px/${pad.r}px`; (badTextPad[k]=badTextPad[k]||[]).push(td); }
   });
-  badTextPad.forEach(p=> add('warn', `text box left/right padding is <code>${p}</code>, spec is 20px`, 'text box padding - 20px l/r'));
+  Object.entries(badTextPad).forEach(([p,els])=> add('warn', `text box left/right padding is <code>${p}</code>, spec is 20px`, 'text box padding - 20px l/r', els));
 
   /* ---- emoji in lists ---- */
   const emojiRe = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/u;
-  const emojiLis = [];
-  [...doc.querySelectorAll('li')].forEach(li=>{ if(!isHeader(li) && emojiRe.test(li.textContent||'')) emojiLis.push(fullText(li,60)); });
-  if(emojiLis.length) add('issue', `emoji in bullet list, not allowed per guidelines: ${esc(quoteList(emojiLis))}`, 'emoji usage - not in lists');
+  const emojiLis = [], emojiEls = [];
+  [...doc.querySelectorAll('li')].forEach(li=>{ if(!isHeader(li) && emojiRe.test(li.textContent||'')){ emojiLis.push(fullText(li,60)); emojiEls.push(li); } });
+  if(emojiLis.length) add('issue', `emoji in bullet list, not allowed per guidelines: ${esc(quoteList(emojiLis))}`, 'emoji usage - not in lists', emojiEls);
 
   return findings;
 }
@@ -490,30 +541,61 @@ function runChecks(html){
 /* ============ rendering ============ */
 function stripHtml(s){ const d=document.createElement('div'); d.innerHTML=s; return (d.textContent||'').replace(/\s+/g,' ').trim(); }
 
+let ALL_FINDINGS = []; // current run, incl. dismissed ones (kept so the copy block stays in sync)
+
+// compact section label for the Slack copy: drop the "— snippet" detail, keep the section name/number
+function slackLoc(section){
+  if(!section) return '';
+  const parts = section.split('; ').map(p=>p.split(' — ')[0].trim());
+  return [...new Set(parts)].join(', ');
+}
+
 function render(findings){
   const order = {issue:0, warn:1};
   findings.sort((a,b)=>order[a.sev]-order[b.sev]);
-  const nIssue = findings.filter(f=>f.sev==='issue').length;
-  const nWarn = findings.filter(f=>f.sev==='warn').length;
+  findings.forEach((f,i)=>{ f.id=i; f.dismissed=false; });
+  ALL_FINDINGS = findings;
+  paint();
+}
+
+function paint(){
+  const live = ALL_FINDINGS.filter(f=>!f.dismissed);
+  const nIssue = live.filter(f=>f.sev==='issue').length;
+  const nWarn = live.filter(f=>f.sev==='warn').length;
 
   const sum = document.getElementById('summary');
   sum.innerHTML = '';
   if(nIssue){ const c=document.createElement('span'); c.className='chip issue'; c.textContent=`${nIssue} to fix`; sum.appendChild(c); }
   if(nWarn){ const c=document.createElement('span'); c.className='chip warn'; c.textContent=`${nWarn} worth a look`; sum.appendChild(c); }
-  if(!findings.length){ const c=document.createElement('span'); c.className='chip ok'; c.textContent='looks good 👍'; sum.appendChild(c); }
+  if(!live.length){ const c=document.createElement('span'); c.className='chip ok'; c.textContent='looks good 👍'; sum.appendChild(c); }
 
   const res = document.getElementById('results');
   res.innerHTML = '';
-  if(!findings.length) res.innerHTML = '<div class="empty">no brand issues found, still eyeball the manual list below.</div>';
-  findings.forEach(f=>{
+  if(!ALL_FINDINGS.length){
+    res.innerHTML = '<div class="empty">no brand issues found, still eyeball the manual list below.</div>';
+  } else if(!live.length){
+    res.innerHTML = '<div class="empty">all comments dismissed - nothing left to send.</div>';
+  }
+  live.forEach(f=>{
     const d=document.createElement('div'); d.className='finding '+f.sev;
-    d.innerHTML = `<div class="c">${f.sev==='issue'?'🔴':'🟡'} ${f.comment}</div><div class="g">guideline: ${esc(f.guide)}</div>`;
+    const loc = f.section ? `<div class="loc">📍 ${esc(f.section)}</div>` : '';
+    d.innerHTML = `<button class="x" data-id="${f.id}" title="dismiss this comment">×</button>`+
+      `<div class="c">${f.sev==='issue'?'🔴':'🟡'} ${f.comment}</div>${loc}`+
+      `<div class="g">guideline: ${esc(f.guide)}</div>`;
     res.appendChild(d);
   });
+  res.querySelectorAll('.x').forEach(btn=>btn.addEventListener('click', ()=>{
+    const id = +btn.getAttribute('data-id');
+    const f = ALL_FINDINGS.find(x=>x.id===id);
+    if(f){ f.dismissed = true; paint(); }
+  }));
 
-  // Slack-ready plain text
-  const lines = findings.map(f=>stripHtml(f.comment));
-  if(findings.length) lines.push('else looks good');
+  // Slack-ready plain text - dismissed comments are left out
+  const lines = live.map(f=>{
+    const where = slackLoc(f.section);
+    return stripHtml(f.comment) + (where ? ` (${where})` : '');
+  });
+  if(live.length) lines.push('else looks good');
   else lines.push('looks good, no brand issues found');
   document.getElementById('copyout').textContent = lines.join('\n\n');
   document.getElementById('copywrap').style.display = 'block';
