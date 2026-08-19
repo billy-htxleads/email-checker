@@ -262,7 +262,8 @@ function runChecks(html){
   /* ---- images: alt text + file type (header bar excluded) ---- */
   const noAlt = [], badExt = [];
   [...doc.querySelectorAll('img')].forEach(img=>{
-    if(isHeader(img)) return;
+    // header AND footer images are standard boilerplate (logo/brandmark) - not checked
+    if(isHeader(img) || (img.closest && img.closest('.elq-header-footer-cell'))) return;
     const alt = img.getAttribute('alt');
     const file = cleanFile(img.getAttribute('src'));
     // the ACS brandmark/logo is a known decorative asset - no alt text expected
